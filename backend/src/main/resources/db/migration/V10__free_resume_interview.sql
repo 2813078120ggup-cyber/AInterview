@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS `free_interview_session` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `candidate_id` BIGINT UNSIGNED NOT NULL,
+  `resume_filename` VARCHAR(255) DEFAULT NULL,
+  `target_role` VARCHAR(128) DEFAULT NULL,
+  `resume_text` LONGTEXT NOT NULL,
+  `resume_summary` LONGTEXT NOT NULL,
+  `status` VARCHAR(24) NOT NULL DEFAULT 'INTERVIEWING',
+  `total_score` DECIMAL(5,2) DEFAULT NULL,
+  `professional_score` DECIMAL(5,2) DEFAULT NULL,
+  `expression_score` DECIMAL(5,2) DEFAULT NULL,
+  `logic_score` DECIMAL(5,2) DEFAULT NULL,
+  `adaptability_score` DECIMAL(5,2) DEFAULT NULL,
+  `summary` TEXT DEFAULT NULL,
+  `strengths` TEXT DEFAULT NULL,
+  `weaknesses` TEXT DEFAULT NULL,
+  `improvement_suggestions` TEXT DEFAULT NULL,
+  `completed_at` DATETIME DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_free_interview_candidate_created` (`candidate_id`, `created_at`),
+  CONSTRAINT `fk_free_interview_candidate` FOREIGN KEY (`candidate_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_free_interview_status` CHECK (`status` IN ('ANALYZING','INTERVIEWING','REPORT_GENERATING','REPORT_READY','FAILED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Candidate resume-driven free interviews';
+
+CREATE TABLE IF NOT EXISTS `free_interview_turn` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `session_id` BIGINT UNSIGNED NOT NULL,
+  `turn_no` TINYINT UNSIGNED NOT NULL,
+  `submission_key` VARCHAR(64) DEFAULT NULL,
+  `question` TEXT NOT NULL,
+  `answer` TEXT NOT NULL,
+  `next_question` TEXT DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_free_interview_turn` (`session_id`, `turn_no`),
+  UNIQUE KEY `uk_free_interview_submission` (`session_id`, `submission_key`),
+  CONSTRAINT `fk_free_interview_turn_session` FOREIGN KEY (`session_id`) REFERENCES `free_interview_session` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_free_interview_turn_range` CHECK (`turn_no` BETWEEN 1 AND 10)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Ten free-interview question and answer turns';

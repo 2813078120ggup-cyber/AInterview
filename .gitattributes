@@ -1,0 +1,4 @@
+docs/deployment/patches/*.patch whitespace=-blank-at-eol
+*.md whitespace=-blank-at-eol
+*.sh text eol=lf
+*.envsh text eol=lf

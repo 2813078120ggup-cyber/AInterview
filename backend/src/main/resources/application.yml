@@ -1,0 +1,133 @@
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ai-interview-platform
+  servlet:
+    multipart:
+      max-file-size: ${MEDIA_MAX_UPLOAD_SIZE:100MB}
+      max-request-size: ${MEDIA_MAX_REQUEST_SIZE:105MB}
+  config:
+    # KMS Agent or Docker secrets can materialize dot-separated property files here.
+    # Example: /run/secrets/spring.datasource.password
+    import: optional:configtree:${APP_SECRETS_DIRECTORY:/run/secrets/}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/ai_interview?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 8
+    validate-on-migrate: true
+    out-of-order: false
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+app:
+  security:
+    jwt-secret: ${JWT_SECRET:change-this-secret-to-a-base64-encoded-32-byte-value}
+    token-expire-hours: ${JWT_EXPIRE_HOURS:24}
+    refresh-token-expire-days: ${REFRESH_TOKEN_EXPIRE_DAYS:14}
+    require-strong-jwt-secret: ${APP_REQUIRE_STRONG_JWT_SECRET:false}
+  ratelimit:
+    enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
+    login-per-minute: ${AUTH_RATE_LIMIT_LOGIN_PER_MINUTE:10}
+    register-per-minute: ${AUTH_RATE_LIMIT_REGISTER_PER_MINUTE:5}
+    code-send-per-minute: ${AUTH_RATE_LIMIT_CODE_SEND_PER_MINUTE:3}
+    code-send-per-day: ${AUTH_RATE_LIMIT_CODE_SEND_PER_DAY:20}
+    login-code-per-minute: ${AUTH_RATE_LIMIT_LOGIN_CODE_PER_MINUTE:10}
+  algorithm:
+    judge:
+      enabled: ${ALGORITHM_JUDGE_ENABLED:true}
+      consumer-enabled: ${ALGORITHM_JUDGE_CONSUMER_ENABLED:true}
+      runner-image: ${ALGORITHM_JUDGE_RUNNER_IMAGE:ai-java17-runner:2.0}
+      docker-host: ${ALGORITHM_JUDGE_DOCKER_HOST:}
+      output-limit-bytes: ${ALGORITHM_JUDGE_OUTPUT_LIMIT_BYTES:8388608}
+      source-limit-chars: ${ALGORITHM_JUDGE_SOURCE_LIMIT_CHARS:100000}
+      max-test-cases: ${ALGORITHM_JUDGE_MAX_TEST_CASES:50}
+      compile-timeout-seconds: ${ALGORITHM_JUDGE_COMPILE_TIMEOUT_SECONDS:30}
+      cpu-count: ${ALGORITHM_JUDGE_CPU_COUNT:1}
+  interview:
+    start-window-minutes: ${INTERVIEW_START_WINDOW_MINUTES:15}
+  storage:
+    root-directory: ${MEDIA_STORAGE_ROOT:./data/media}
+    max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:104857600}
+  upload-security:
+    # Production should set CLAMAV_REQUIRED=true and point this to a private ClamAV service.
+    clamav-required: ${CLAMAV_REQUIRED:false}
+    clamav-host: ${CLAMAV_HOST:}
+    clamav-port: ${CLAMAV_PORT:3310}
+  ai-task:
+    poll-interval-ms: ${AI_TASK_POLL_INTERVAL_MS:1000}
+    fetch-limit: ${AI_TASK_FETCH_LIMIT:12}
+    worker-count: ${AI_TASK_WORKER_COUNT:3}
+    worker-queue-capacity: ${AI_TASK_WORKER_QUEUE_CAPACITY:50}
+    report-scoring-concurrency: ${REPORT_SCORING_CONCURRENCY:3}
+    report-scoring-queue-capacity: ${REPORT_SCORING_QUEUE_CAPACITY:50}
+  deepseek:
+    enabled: ${DEEPSEEK_ENABLED:true}
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+  verification-code:
+    ttl: ${REGISTER_CODE_TTL:5m}
+    cooldown: ${REGISTER_CODE_COOLDOWN:60s}
+    sms-host: ${REGISTER_SMS_HOST:https://dfsns.market.alicloudapi.com}
+    sms-path: ${REGISTER_SMS_PATH:/data/send_sms}
+    sms-app-code: ${REGISTER_SMS_APP_CODE:}
+    sms-template-id: ${REGISTER_SMS_TEMPLATE_ID:CST_ptdie100}
+    mail-from: ${MAIL_FROM:${MAIL_USERNAME:}}
+    mail-subject: ${REGISTER_CODE_MAIL_SUBJECT:注册验证码}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  server:
+    # Internal-only container port. Do not publish it through Nginx or a host port.
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

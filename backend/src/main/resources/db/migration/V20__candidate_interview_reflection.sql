@@ -1,0 +1,20 @@
+CREATE TABLE `interview_reflection` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `interview_id` BIGINT UNSIGNED NOT NULL,
+  `candidate_id` BIGINT UNSIGNED NOT NULL,
+  `self_score` TINYINT UNSIGNED NOT NULL COMMENT 'Candidate self assessment from 0 to 100',
+  `confidence_level` TINYINT UNSIGNED NOT NULL COMMENT 'Candidate confidence from 1 to 5',
+  `content` VARCHAR(2000) NOT NULL COMMENT 'Main reflection',
+  `highlights` VARCHAR(1000) DEFAULT NULL COMMENT 'What went well',
+  `improvements` VARCHAR(1000) DEFAULT NULL COMMENT 'What needs improvement',
+  `action_plan` VARCHAR(1000) DEFAULT NULL COMMENT 'Next practice action',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_interview_reflection_interview` (`interview_id`),
+  KEY `idx_interview_reflection_candidate_time` (`candidate_id`, `updated_at`),
+  CONSTRAINT `fk_interview_reflection_interview` FOREIGN KEY (`interview_id`) REFERENCES `interview` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_interview_reflection_candidate` FOREIGN KEY (`candidate_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_interview_reflection_self_score` CHECK (`self_score` BETWEEN 0 AND 100),
+  CONSTRAINT `chk_interview_reflection_confidence` CHECK (`confidence_level` BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Candidate reflection after an interview';

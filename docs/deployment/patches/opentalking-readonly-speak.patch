@@ -1,0 +1,72 @@
+diff --git a/opentalking/pipeline/speak/synthesis_runner.py b/opentalking/pipeline/speak/synthesis_runner.py
+--- a/opentalking/pipeline/speak/synthesis_runner.py
++++ b/opentalking/pipeline/speak/synthesis_runner.py
+@@ -1799,6 +1799,14 @@ class SynthesisRunner:
+         async with self._speak_lock:
+             if self._closed:
+                 return
++            read_only_prefix = "【只朗读模式】"
++            text = str(text or "").strip()
++            read_only = text.startswith(read_only_prefix)
++            if read_only:
++                text = text[len(read_only_prefix):].strip()
++            if not text:
++                return
++
+             await self._await_dynamic_idle_prepare_done()
+             self._interrupt.clear()
+             self._speaking = True
+@@ -1821,14 +1829,15 @@ class SynthesisRunner:
+             )
+             self._speech_started = True
+ 
+-            memory_prompt = await self._memory.retrieve_prompt(text) if self._memory else ""
++            memory_prompt = "" if read_only or self._memory is None else await self._memory.retrieve_prompt(text)
+             llm_user_text = (
+                 f"{memory_prompt}\n\nCurrent user message:\n{text}"
+                 if memory_prompt
+                 else text
+             )
+-            self.conversation.add_user(text)
+-            agent_context = await self._build_agent_context(text)
++            if not read_only:
++                self.conversation.add_user(text)
++            agent_context = {} if read_only else await self._build_agent_context(text)
+ 
+             full_response = ""
+             spoken_prefix = ""
+@@ -2138,6 +2148,12 @@ class SynthesisRunner:
+                     t_llm0 = time.perf_counter()
+                     t_first_token: float | None = None
+                     try:
++                        if read_only:
++                            full_response = text
++                            await _queue_sentence_for_tts(text, force=True)
++                            log.info("Read-only speech bypassed LLM: session=%s", self.session_id)
++                            return
++
+                         log.info("LLM streaming started for: %s", text[:50])
+                         async for delta in self.llm.chat_stream(_llm_request_messages()):
+                             if self._interrupt.is_set():
+@@ -2200,8 +2216,11 @@ class SynthesisRunner:
+ 
+                 try:
+                     t_opener0 = time.perf_counter()
+-                    await _emit_cached_opener()
+-                    timing["opener_ms"] = (time.perf_counter() - t_opener0) * 1000.0
++                    if read_only:
++                        timing["opener_ms"] = 0.0
++                    else:
++                        await _emit_cached_opener()
++                        timing["opener_ms"] = (time.perf_counter() - t_opener0) * 1000.0
+                     # Run LLM feeder and TTS worker concurrently within
+                     # the producer; the TTS worker processes sentences as
+                     # fast as Edge TTS can generate audio while the LLM
+@@ -2490,6 +2509,6 @@ class SynthesisRunner:
+ 
+             stored_response = _merge_spoken_reply(spoken_prefix, full_response)
+-            if stored_response:
++            if stored_response and not read_only:
+                 self.conversation.add_assistant(stored_response)
+                 await self._save_agent_turn(user_text=text, assistant_text=stored_response)
+                 if self._memory is not None:

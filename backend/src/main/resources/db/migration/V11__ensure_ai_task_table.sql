@@ -1,0 +1,28 @@
+-- Repairs databases created before V6 without replaying its non-idempotent column changes.
+CREATE TABLE IF NOT EXISTS `ai_task` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `interview_id` BIGINT UNSIGNED DEFAULT NULL,
+  `answer_id` BIGINT UNSIGNED DEFAULT NULL,
+  `task_type` VARCHAR(32) NOT NULL,
+  `dedupe_key` VARCHAR(128) DEFAULT NULL,
+  `status` VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+  `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `max_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 3,
+  `scheduled_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `started_at` DATETIME DEFAULT NULL,
+  `finished_at` DATETIME DEFAULT NULL,
+  `input_payload` JSON DEFAULT NULL,
+  `output_payload` JSON DEFAULT NULL,
+  `error_message` TEXT DEFAULT NULL,
+  `created_by` BIGINT UNSIGNED DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_task_dedupe` (`dedupe_key`),
+  KEY `idx_ai_task_status_schedule` (`status`, `scheduled_at`, `id`),
+  KEY `idx_ai_task_interview_type` (`interview_id`, `task_type`),
+  CONSTRAINT `fk_ai_task_interview` FOREIGN KEY (`interview_id`) REFERENCES `interview` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ai_task_answer` FOREIGN KEY (`answer_id`) REFERENCES `interview_answer` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ai_task_creator` FOREIGN KEY (`created_by`) REFERENCES `user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_ai_task_status` CHECK (`status` IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

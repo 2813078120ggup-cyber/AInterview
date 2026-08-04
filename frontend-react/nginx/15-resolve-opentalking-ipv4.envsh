@@ -1,0 +1,35 @@
+#!/bin/sh
+
+configured="${OPENTALKING_UPSTREAM:-host.docker.internal:8210}"
+case "$configured" in
+  *:*)
+    host="${configured%:*}"
+    port="${configured##*:}"
+    ;;
+  *)
+    host="$configured"
+    port="8210"
+    ;;
+esac
+
+resolved="$(awk -v target="$host" '
+  $1 ~ /^[0-9]+\./ {
+    for (i = 2; i <= NF; i += 1) {
+      if ($i == target) {
+        print $1
+        exit
+      }
+    }
+  }
+' /etc/hosts)"
+
+if [ -z "$resolved" ] && command -v getent >/dev/null 2>&1; then
+  resolved="$(getent hosts "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+\./ { print $1; exit }')"
+fi
+
+if [ -z "$resolved" ]; then
+  resolved="$host"
+fi
+
+export OPENTALKING_UPSTREAM_RESOLVED="${resolved}:${port}"
+echo "OpenTalking upstream resolved to ${OPENTALKING_UPSTREAM_RESOLVED}"

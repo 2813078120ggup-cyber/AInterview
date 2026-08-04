@@ -1,0 +1,63 @@
+# 数据库脚本与 Flyway 迁移指南
+
+## 当前有效的脚本位置
+
+| 用途 | 位置 | 说明 |
+|---|---|---|
+| 应用迁移唯一来源 | `backend/src/main/resources/db/migration/` | 后端 JAR 打包并由 Flyway 自动执行；这是唯一可新增的版本化迁移目录。 |
+| 空 Docker 数据卷初始化 | `docs/database/docker-init/01-ai-interview-init.sql` | 仅由 MySQL 官方镜像在**首次创建空数据卷**时读取，用于开发/全新 Docker 环境。 |
+| 本地测试数据 | `docs/database/local-test-interview-scenarios.sql` | 手工测试场景，不属于应用启动或 Flyway 迁移。 |
+| 数据字典 | `docs/database/data_dictionary.md` | 业务表和字段说明。 |
+
+应用配置位于 `backend/src/main/resources/application.yml`：
+
+```yaml
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 8
+    validate-on-migrate: true
+    out-of-order: false
+```
+
+## 迁移策略
+
+- 空数据库：Flyway 执行 `V1__baseline_schema.sql`，再按顺序执行 V9–V24。
+- 已存在且非空的历史数据库：首次启动会以 V8 建立基线，再执行 V9–V24。
+- 执行记录保存在数据库的 `flyway_schema_history` 表。该表保存版本、脚本名、校验和和执行结果；迁移 SQL 本身仍由代码仓库和后端 JAR 保存。
+- 迁移为只前进策略。已发布脚本不能改名、改内容或删除；需要修复时新增更高版本的脚本。
+
+## 当前迁移版本
+
+| 版本 | 内容 |
+|---|---|
+| V1 | 空库完整基线，包含历史 V2–V8 的结构快照及初始数据。 |
+| V9 | 可选联系方式规范化。 |
+| V10 | 自由简历面试。 |
+| V11 | AI 任务表兜底。 |
+| V12 | OpenTalking 浏览器访问端点规范化。 |
+| V13 | 异步自由面试任务。 |
+| V14 | 提示词版本与激活历史。 |
+| V15 | AI 生成审计。 |
+| V16 | 面试报告状态约束。 |
+| V17 | 模拟面试追问自然度与题目边界优化；不覆盖管理员自定义的活动提示词。 |
+| V18 | 持久化面试当前题号与进度更新时间；应用按 `started_at + duration` 恢复剩余时间。 |
+| V19 | 新增文字/语音/视频面试方式、录制会话、按题媒体分段和题目/回答/追问时间轴。 |
+| V20 | 候选人面试心得与复盘。 |
+| V21 | 算法练习中心基础表、题目、用例、提交、进度、收藏和笔记。 |
+| V22 | 修正算法种子题及测试用例。 |
+| V23 | 扩充算法题库与标准答案字段。 |
+| V24 | 对齐算法题目描述、初始代码模板和标准答案。 |
+
+## 新增迁移的规则
+
+1. 在 `backend/src/main/resources/db/migration/` 新建 `V25__<英文描述>.sql`；已发布或已进入待发布基线的 V1、V9–V24 不再修改。
+2. 本地执行后检查应用日志中的 Flyway `validate` / `migrate` 结果，以及 `flyway_schema_history`。
+3. 不把同一脚本复制到 `docs/database`；文档只记录目的、影响和上线检查项。
+4. 上线前准备备份与应用版本回退方案。应用镜像可回退，但数据库迁移不会自动回滚。
+
+## 历史脚本
+
+旧版手工初始化 SQL、重复迁移副本和手工执行脚本属于原工作区归档，本次干净仓库迁移未携带。它们不参与当前 Docker 初始化、应用启动或 Flyway 扫描；如需历史取证，应在旧工作区的只读备份中查询，不要重新放回有效迁移目录。

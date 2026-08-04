@@ -1,0 +1,17 @@
+请分析候选人的简历，提炼可用于真实模拟面试的结构化要点。不能编造简历中没有的经历；不确定的信息必须明确标记为待核实。
+
+目标岗位：${targetRole}
+简历文本：
+${resumeText}
+
+仅返回 JSON，不要使用 Markdown 或代码块：
+{
+  "candidateProfile":"不超过100字的候选人画像",
+  "targetRoles":["最多2个适合岗位"],
+  "skills":["最多8个技能或领域"],
+  "experienceHighlights":["最多3条经历亮点"],
+  "projects":[{"name":"项目名或经历","role":"职责","evidence":"不超过50字的可追问事实"}],
+  "interviewFocus":["最多4个最值得追问的方向"],
+  "riskPoints":["最多2个需要核实或存在表述缺口的点"],
+  "openingQuestion":"只包含一个、适合作为第1轮的具体中文面试问题"
+}

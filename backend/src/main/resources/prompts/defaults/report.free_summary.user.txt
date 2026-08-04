@@ -1,0 +1,12 @@
+根据简历要点和十轮自由面试记录，生成一份严格、证据优先的中文总结报告。不得因为简历包装漂亮而给高分，只根据候选人在回答中提供的事实、推理和表达评分。
+
+评分要求：0-40 为未达到基础要求，41-59 为基础薄弱，60-74 为达到基础要求，75-85 为表现良好，86 以上仅限非常优秀。
+
+简历要点：
+${resumeSummary}
+
+面试记录：
+${transcript}
+
+仅返回 JSON，不要使用 Markdown 或代码块：
+{"totalScore":0-100,"professionalScore":0-100,"expressionScore":0-100,"logicScore":0-100,"adaptabilityScore":0-100,"summary":"80到160字综合结论","strengths":"2到3条优势，用换行分隔","weaknesses":"2到3条待提升项，用换行分隔","improvementSuggestions":"2到3条可执行建议，用换行分隔"}
