@@ -4,6 +4,7 @@ import { AlgorithmEmptyState, AlgorithmPageHeader } from '@/components/algorithm
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ResponsiveSelect } from '@/components/ui/responsive-select'
 import { algorithmApi, type AlgorithmAdminProblem, type AlgorithmAdminProblemDetail, type AlgorithmAdminSaveRequest, type AlgorithmAdminTestCase, type AlgorithmTag } from '@/lib/algorithm-api'
 import { algorithmDifficultyMeta, difficultyLabel } from '@/lib/algorithm-status'
 
@@ -30,6 +31,10 @@ const EMPTY_FORM: AlgorithmAdminSaveRequest = {
   ],
 }
 
+function formatAlgorithmProblemCode(id: number) {
+  return `ALG-${String(id).padStart(4, '0')}`
+}
+
 export function AdminAlgorithmProblemsPage() {
   const [items, setItems] = useState<AlgorithmAdminProblem[]>([])
   const [tags, setTags] = useState<AlgorithmTag[]>([])
@@ -38,6 +43,7 @@ export function AdminAlgorithmProblemsPage() {
   const [editingId, setEditingId] = useState<number>()
   const [form, setForm] = useState<AlgorithmAdminSaveRequest>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [actionBusyId, setActionBusyId] = useState<number>()
   const [error, setError] = useState('')
   const [keyword, setKeyword] = useState('')
   const [difficulty, setDifficulty] = useState('')
@@ -67,6 +73,7 @@ export function AdminAlgorithmProblemsPage() {
   }
 
   async function openEdit(item: AlgorithmAdminProblem) {
+    setActionBusyId(item.id)
     setError('')
     try {
       const detail: AlgorithmAdminProblemDetail = await algorithmApi.adminProblem(item.id)
@@ -101,6 +108,8 @@ export function AdminAlgorithmProblemsPage() {
       setOpen(true)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '加载题目失败')
+    } finally {
+      setActionBusyId(undefined)
     }
   }
 
@@ -123,11 +132,14 @@ export function AdminAlgorithmProblemsPage() {
   }
 
   async function toggleStatus(item: AlgorithmAdminProblem) {
+    setActionBusyId(item.id)
     try {
       await algorithmApi.adminStatus(item.id, item.status === 1 ? 0 : 1)
       await load()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '操作失败')
+    } finally {
+      setActionBusyId(undefined)
     }
   }
 
@@ -165,13 +177,13 @@ export function AdminAlgorithmProblemsPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1680px] p-4 sm:p-5 lg:p-8">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
       <div className="space-y-6">
       <AlgorithmPageHeader
         eyebrow="算法题库"
         title="算法题目管理"
         description="集中维护题目内容、难度标签、启用状态与判题用例。"
-        actions={<Button className="w-full sm:w-auto" onClick={() => void openCreate()}><Plus className="h-4 w-4" />新建题目</Button>}
+        actions={<Button type="button" className="w-full sm:w-auto" onClick={() => void openCreate()}><Plus className="h-4 w-4" />新建题目</Button>}
       />
 
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
@@ -200,17 +212,8 @@ export function AdminAlgorithmProblemsPage() {
               <span className="sr-only">搜索题目</span>
               <input value={keyword} onChange={event => setKeyword(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="搜索标题或 ID" />
             </label>
-            <select aria-label="按难度筛选" value={difficulty} onChange={event => setDifficulty(event.target.value)} className="h-11 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-[var(--accent)]">
-              <option value="">全部难度</option>
-              <option value="EASY">简单</option>
-              <option value="MEDIUM">中等</option>
-              <option value="HARD">困难</option>
-            </select>
-            <select aria-label="按状态筛选" value={status} onChange={event => setStatus(event.target.value)} className="h-11 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-[var(--accent)]">
-              <option value="">全部状态</option>
-              <option value="1">已启用</option>
-              <option value="0">已停用</option>
-            </select>
+            <ResponsiveSelect ariaLabel="按难度筛选" value={difficulty} onValueChange={setDifficulty} options={[{ value: '', label: '全部难度' }, { value: 'EASY', label: '简单' }, { value: 'MEDIUM', label: '中等' }, { value: 'HARD', label: '困难' }]} />
+            <ResponsiveSelect ariaLabel="按状态筛选" value={status} onValueChange={setStatus} options={[{ value: '', label: '全部状态' }, { value: '1', label: '已启用' }, { value: '0', label: '已停用' }]} />
           </div>
         </div>
         {loading ? (
@@ -224,7 +227,7 @@ export function AdminAlgorithmProblemsPage() {
           <table className="mobile-card-table w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
               <tr>
-                <th className="px-5 py-4">ID</th>
+                <th className="px-5 py-4">编号</th>
                 <th className="px-5 py-4">标题</th>
                 <th className="px-5 py-4">难度</th>
                 <th className="px-5 py-4">状态</th>
@@ -235,7 +238,7 @@ export function AdminAlgorithmProblemsPage() {
             <tbody>
               {visibleItems.map(item => (
                 <tr key={item.id} className="border-b border-border/70 transition last:border-0 hover:bg-muted/30">
-                  <td data-label="ID" className="px-5 py-4 font-mono text-xs text-muted-foreground">#{item.id}</td>
+                  <td data-label="编号" className="px-5 py-4" title={`内部 ID：${item.id}`}><span className="inline-flex items-center rounded-xl border border-[var(--accent)]/20 bg-[var(--accent-soft)] px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-[var(--accent)]">{formatAlgorithmProblemCode(item.id)}</span></td>
                   <td data-label="标题" className="px-5 py-4 font-semibold">{item.title}</td>
                   <td data-label="难度" className="px-5 py-4">
                     <Badge tone={algorithmDifficultyMeta[item.difficulty]?.tone ?? 'default'}>{difficultyLabel(item.difficulty)}</Badge>
@@ -248,9 +251,13 @@ export function AdminAlgorithmProblemsPage() {
                   <td data-label="提交/通过" className="px-5 py-4 tabular-nums"><span className="font-semibold">{item.submissionCount}</span><span className="mx-1.5 text-muted-foreground">/</span>{item.acceptedCount}</td>
                   <td data-label="操作" className="px-5 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
-                      <Button variant="ghost" className="h-9 w-9 rounded-full px-0" onClick={() => void openEdit(item)} aria-label={`编辑${item.title}`} title="编辑题目"><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" className="h-9 w-9 rounded-full px-0" onClick={() => void toggleStatus(item)} aria-label={`${item.status === 1 ? '停用' : '启用'}${item.title}`} title={item.status === 1 ? '停用题目' : '启用题目'}>
-                        {item.status === 1 ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                      <Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={actionBusyId === item.id} aria-busy={actionBusyId === item.id} onClick={() => void openEdit(item)}>
+                        {actionBusyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                        {actionBusyId === item.id ? '处理中…' : '编辑'}
+                      </Button>
+                      <Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={actionBusyId === item.id} aria-busy={actionBusyId === item.id} onClick={() => void toggleStatus(item)}>
+                        {actionBusyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : item.status === 1 ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                        {actionBusyId === item.id ? '处理中…' : item.status === 1 ? '停用' : '启用'}
                       </Button>
                     </div>
                   </td>
@@ -270,9 +277,9 @@ export function AdminAlgorithmProblemsPage() {
                 <p className="text-sm font-semibold text-[var(--accent)]">算法题库</p>
                 <h2 className="mt-1 text-2xl font-bold">{editingId ? '编辑题目' : '新建题目'}</h2>
               </div>
-              <button onClick={() => setOpen(false)} className="rounded-full p-2 hover:bg-muted" aria-label="关闭">
+              <Button type="button" variant="ghost" className="h-10 w-10 shrink-0 rounded-full px-0" onClick={() => setOpen(false)} aria-label="关闭">
                 <X className="h-5 w-5" />
-              </button>
+              </Button>
             </div>
 
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
@@ -332,8 +339,9 @@ export function AdminAlgorithmProblemsPage() {
                     <button
                       key={tag.id}
                       type="button"
+                      aria-pressed={form.tagIds.includes(tag.id)}
                       onClick={() => toggleTag(tag.id)}
-                      className={`rounded-full border px-3 py-1.5 text-xs transition ${form.tagIds.includes(tag.id) ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-semibold text-[var(--accent)]' : 'border-border bg-surface hover:bg-muted'}`}
+                      className={`rounded-full border px-3 py-1.5 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${form.tagIds.includes(tag.id) ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-semibold text-[var(--accent)]' : 'border-border bg-surface hover:bg-muted'}`}
                     >
                       {tag.name}
                     </button>
@@ -363,9 +371,9 @@ export function AdminAlgorithmProblemsPage() {
                       <input type="checkbox" checked={testCase.enabled} onChange={event => updateTestCase(index, { enabled: event.target.checked })} className="accent-[var(--accent)]" />
                       启用
                     </label>
-                    <button type="button" onClick={() => setForm(previous => ({ ...previous, testCases: previous.testCases.filter((_, testCaseIndex) => testCaseIndex !== index) }))} className="grid h-10 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="删除用例">
+                    <Button type="button" variant="ghost" onClick={() => setForm(previous => ({ ...previous, testCases: previous.testCases.filter((_, testCaseIndex) => testCaseIndex !== index) }))} className="h-9 w-9 rounded-full px-0 text-muted-foreground hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30" aria-label="删除用例">
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>

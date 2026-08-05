@@ -1,4 +1,4 @@
-import { Eye, Search, UserPlus, UserRound, X } from 'lucide-react'
+import { Eye, Loader2, Power, PowerOff, Search, UserPlus, UserRound, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +26,7 @@ export function AdminCandidates() {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [updatingId, setUpdatingId] = useState('')
   const [form, setForm] = useState({ username: '', password: '', realName: '', email: '', phone: '' })
 
   async function load() {
@@ -48,6 +49,7 @@ export function AdminCandidates() {
   useEffect(() => { void load() }, [])
 
   async function toggle(user: User) {
+    setUpdatingId(user.id)
     try {
       const nextStatus = user.status === 1 ? 0 : 1
       await request(`/v1/users/${user.id}/status`, { method: 'PUT', body: JSON.stringify({ status: nextStatus }) })
@@ -55,6 +57,8 @@ export function AdminCandidates() {
       setItems(previous => previous.map(item => item.id === user.id ? { ...item, status: nextStatus } : item))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '候选人状态更新失败，请稍后重试。')
+    } finally {
+      setUpdatingId('')
     }
   }
 
@@ -96,7 +100,7 @@ export function AdminCandidates() {
           { value: "1", label: "已启用" },
           { value: "0", label: "已停用" },
         ]}
-      /><Button variant="secondary" onClick={() => void load()}>搜索</Button></div>
+      /><Button type="button" variant="secondary" className="h-9 px-4" onClick={() => void load()}>搜索</Button></div>
       {loading ? <p className="p-12 text-center text-sm text-muted-foreground">正在加载候选人列表…</p> : <table className="mobile-card-table text-left text-sm">
         <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground"><tr><th className="px-5 py-4">候选人</th><th className="px-5 py-4">手机号</th><th className="px-5 py-4">邮箱</th><th className="px-5 py-4">最近登录</th><th className="px-5 py-4">状态</th><th className="px-5 py-4 text-right">操作</th></tr></thead>
         <tbody>{items.map(user => <tr key={user.id} className="border-b border-border/70 last:border-0 hover:bg-muted/30">
@@ -105,11 +109,11 @@ export function AdminCandidates() {
           <td data-label="邮箱" className="break-all px-5 py-5 text-muted-foreground">{user.email || '未填写'}</td>
           <td data-label="最近登录" className="px-5 py-5 text-muted-foreground">{user.lastLoginAt?.replace('T', ' ').slice(0, 16) || '从未登录'}</td>
           <td data-label="状态" className="px-5 py-5"><Badge tone={user.status === 1 ? 'success' : 'default'}>{user.status === 1 ? '已启用' : '已停用'}</Badge></td>
-          <td data-label="操作" className="px-5 py-5 text-right"><div className="flex justify-end gap-4"><button onClick={() => nav(`/admin/candidates/${user.id}`)} className="inline-flex min-h-11 items-center gap-1 font-semibold text-[var(--accent)] hover:text-foreground"><Eye className="h-4 w-4" />查看</button><button onClick={() => void toggle(user)} className="min-h-11 font-semibold text-muted-foreground hover:text-foreground">{user.status === 1 ? '停用' : '启用'}</button></div></td>
+          <td data-label="操作" className="px-5 py-5 text-right"><div className="flex justify-end gap-2"><Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs" onClick={() => nav(`/admin/candidates/${user.id}`)}><Eye className="h-3.5 w-3.5" />查看</Button><Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={updatingId === user.id} aria-busy={updatingId === user.id} onClick={() => void toggle(user)}>{updatingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : user.status === 1 ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}{updatingId === user.id ? '处理中…' : user.status === 1 ? '停用' : '启用'}</Button></div></td>
         </tr>)}{!items.length && <tr><td data-mobile-full colSpan={6} className="p-12 text-center text-muted-foreground">暂无候选人记录</td></tr>}</tbody>
       </table>}
     </Card>
-    {open && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="new-candidate-title"><div className="mx-auto my-4 max-w-lg rounded-[24px] bg-surface p-5 shadow-2xl sm:my-12 sm:rounded-[30px] sm:p-7"><div className="flex justify-between"><div><p className="text-sm font-semibold text-[var(--accent)]">新建账户</p><h2 id="new-candidate-title" className="mt-1 text-2xl font-bold">新增候选人</h2></div><button onClick={() => setOpen(false)} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-muted" aria-label="关闭新增候选人对话框"><X className="h-5 w-5" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2">{([
+    {open && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="new-candidate-title"><div className="mx-auto my-4 max-w-lg rounded-[24px] bg-surface p-5 shadow-2xl sm:my-12 sm:rounded-[30px] sm:p-7"><div className="flex justify-between"><div><p className="text-sm font-semibold text-[var(--accent)]">新建账户</p><h2 id="new-candidate-title" className="mt-1 text-2xl font-bold">新增候选人</h2></div><Button type="button" variant="ghost" className="h-10 w-10 shrink-0 rounded-full px-0" onClick={() => setOpen(false)} aria-label="关闭新增候选人对话框"><X className="h-5 w-5" /></Button></div><div className="mt-6 grid gap-4 sm:grid-cols-2">{([
       ['realName', '姓名', '刘洋'],
       ['username', '账号', 'candidate_liu'],
       ['password', '初始密码', '8-64 位，字母+数字'],

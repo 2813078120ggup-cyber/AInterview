@@ -120,7 +120,7 @@ export function AdminAiGenerations() {
         <h1 className="mt-2 text-3xl font-bold sm:text-4xl">AI 调用审计</h1>
         <p className="mt-3 max-w-3xl text-muted-foreground">查看模型、提示词版本、耗时、Token 用量与失败原因。</p>
       </div>
-      <Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新记录</Button>
+      <Button type="button" variant="secondary" className="h-9 px-4" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新记录</Button>
     </header>
 
     {error && <p className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">{error}</p>}
@@ -159,7 +159,7 @@ export function AdminAiGenerations() {
           options={[{ value: "", label: "全部任务类型" }, ...generationTypes.map(type => ({ value: type, label: generationNames[type] }))]}
         />
         <input value={promptCode} onChange={event => { setPromptCode(event.target.value); setPageNo(1) }} placeholder="提示词代码（精确匹配）" className="h-11 rounded-xl border border-border bg-background px-3 text-sm outline-none" />
-        <Button variant="secondary" className="w-full lg:w-auto" onClick={resetFilters}>重置</Button>
+        <Button type="button" variant="secondary" className="h-9 w-full px-4 lg:w-auto" onClick={resetFilters}>重置</Button>
       </div>
 
       <div>

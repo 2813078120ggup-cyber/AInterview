@@ -1,6 +1,7 @@
 import { Activity, AudioLines, Bot, BrainCircuit, CheckCircle2, Database, Edit3, Eye, EyeOff, KeyRound, Loader2, Mic2, Plus, Server, Settings2, Speech, Trash2, Volume2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
@@ -120,15 +121,16 @@ function Field({ label, value, secret = false }: { label: string; value: string;
     <span className="min-w-0 break-words text-muted-foreground">{label}</span>
     <span className="flex min-w-0 items-start justify-between gap-2 sm:justify-end">
       <span className="min-w-0 break-all font-semibold leading-5 sm:text-right">{displayValue}</span>
-      {secret && value && <button
+      {secret && value && <Button
         type="button"
+        variant="ghost"
         onClick={() => setVisible(!visible)}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="h-8 w-8 shrink-0 rounded-full px-0 text-muted-foreground hover:text-foreground"
         aria-label={visible ? '隐藏密钥' : '查看密钥'}
         aria-pressed={visible}
       >
         {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-      </button>}
+      </Button>}
     </span>
   </div>
 }
@@ -140,6 +142,9 @@ export function AdminSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testingId, setTestingId] = useState('')
+  const [updatingId, setUpdatingId] = useState('')
+  const [deletingId, setDeletingId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Provider>()
 
   const enabledCount = items.filter(item => item.enabled).length
   const textDefault = items.find(item => item.textDefault)
@@ -199,6 +204,7 @@ export function AdminSettings() {
   }
 
   async function updateProvider(item: Provider, patch: Partial<Provider>, action: string) {
+    setUpdatingId(item.id)
     try {
       const next = { ...item, ...patch }
       const saved = await request<Provider>(`/v1/admin/ai-providers/${item.id}`, { method: 'PUT', body: JSON.stringify(next) })
@@ -208,18 +214,23 @@ export function AdminSettings() {
       void refresh()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '服务配置更新失败，请稍后重试。')
+    } finally {
+      setUpdatingId('')
     }
   }
 
   async function remove(item: Provider) {
-    if (!window.confirm(`确定删除 ${item.name} 配置吗？删除后需要重新录入密钥。`)) return
+    setDeletingId(item.id)
     try {
       await request(`/v1/admin/ai-providers/${item.id}`, { method: 'DELETE' })
       setItems(previous => previous.filter(current => current.id !== item.id))
       audit('删除配置', item.name)
       setMessage(`${item.name} 已删除。`)
+      setDeleteTarget(undefined)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '服务配置删除失败，请稍后重试。')
+    } finally {
+      setDeletingId('')
     }
   }
 
@@ -254,7 +265,7 @@ export function AdminSettings() {
 
     {message && <div className="mt-6 flex items-center justify-between rounded-[22px] border border-border bg-[var(--accent-soft)] px-5 py-4 text-sm text-[var(--accent)]">
       <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{message}</span>
-      <button onClick={() => setMessage('')} className="rounded-full p-1 hover:bg-surface" aria-label="关闭提示"><X className="h-4 w-4" /></button>
+      <Button type="button" variant="ghost" className="h-9 w-9 rounded-full px-0" onClick={() => setMessage('')} aria-label="关闭提示"><X className="h-4 w-4" /></Button>
     </div>}
 
     <div className="mt-7 grid gap-4 md:grid-cols-3">
@@ -275,6 +286,8 @@ export function AdminSettings() {
             const Icon = meta.icon
             const testable = canTestProvider(item)
             const deleteReason = defaultDeleteReason(item)
+            const updating = updatingId === item.id
+            const deleting = deletingId === item.id
             const labels = providerLabels(item.kind, item.code)
             return <Card key={item.id} motionDelay={index * .04} className="min-w-0 overflow-hidden p-0">
               <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
@@ -306,38 +319,40 @@ export function AdminSettings() {
               <div className="min-w-0 p-4 sm:p-5">
                 <p className="min-h-10 break-words text-sm leading-6 text-muted-foreground">{item.remark || '暂无说明。'}</p>
                 <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-                  <Button variant="secondary" className="h-10 min-w-0 px-3 sm:px-4" onClick={() => setEditing(item)}><Edit3 className="h-4 w-4" />编辑</Button>
+                  <Button type="button" variant="secondary" className="h-10 min-w-0 px-3 sm:px-4" disabled={updating || deleting} onClick={() => setEditing(item)}><Edit3 className="h-4 w-4" />编辑</Button>
                   <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 sm:px-4"
-                    disabled={!testable || testingId === item.id}
+                    disabled={!testable || testingId === item.id || updating || deleting}
                     title={!item.enabled ? '请先启用服务。' : !testable ? '请先配置服务地址。' : '测试当前服务连通性'}
-                    onClick={() => testProvider(item)}
+                    onClick={() => void testProvider(item)}
                   >{testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}测试</Button>
                   <Button
                     variant={item.enabled ? 'secondary' : 'primary'}
                     className="h-10 min-w-0 px-3 sm:px-4"
-                    onClick={() => updateProvider(item, { enabled: !item.enabled }, item.enabled ? '停用配置' : '启用配置')}
-                  >{item.enabled ? '停用' : '启用'}</Button>
+                    disabled={updating || deleting}
+                    aria-busy={updating}
+                    onClick={() => void updateProvider(item, { enabled: !item.enabled }, item.enabled ? '停用配置' : '启用配置')}
+                  >{updating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{item.enabled ? '停用' : '启用'}</Button>
                   {canBeTextDefault(item) && <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 sm:px-4"
-                    disabled={!item.enabled || item.textDefault}
-                    onClick={() => updateProvider(item, { textDefault: true }, '设置文字默认模型')}
+                    disabled={!item.enabled || item.textDefault || updating || deleting}
+                    onClick={() => void updateProvider(item, { textDefault: true }, '设置文字默认模型')}
                   ><Database className="h-4 w-4" />{item.textDefault ? '文字默认' : '设为文字'}</Button>}
                   {canBeVoiceDefault(item) && <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 sm:px-4"
-                    disabled={!item.enabled || item.voiceDefault}
-                    onClick={() => updateProvider(item, { voiceDefault: true }, '设置语音默认模型')}
+                    disabled={!item.enabled || item.voiceDefault || updating || deleting}
+                    onClick={() => void updateProvider(item, { voiceDefault: true }, '设置语音默认模型')}
                   ><Mic2 className="h-4 w-4" />{item.voiceDefault ? '语音默认' : '设为语音'}</Button>}
                   <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 text-rose-700 hover:border-rose-200 hover:bg-rose-50 sm:px-4 dark:text-rose-200 dark:hover:bg-rose-950/30"
-                    disabled={Boolean(deleteReason)}
+                    disabled={Boolean(deleteReason) || updating || deleting}
                     title={deleteReason || '删除当前服务配置'}
-                    onClick={() => remove(item)}
-                  ><Trash2 className="h-4 w-4" />删除</Button>
+                    onClick={() => setDeleteTarget(item)}
+                  >{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}删除</Button>
                 </div>
               </div>
             </Card>
@@ -354,7 +369,7 @@ export function AdminSettings() {
             <h2 id="provider-dialog-title" className="mt-1 text-2xl font-bold">{editing.id ? '编辑服务' : '新增服务'}</h2>
             <p className="mt-2 text-sm text-muted-foreground">密钥保留脱敏值时，系统将沿用原密钥。</p>
           </div>
-          <button onClick={() => setEditing(null)} className="rounded-full p-2 hover:bg-muted" aria-label="关闭服务配置对话框"><X className="h-5 w-5" /></button>
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={() => setEditing(null)} aria-label="关闭服务配置对话框"><X className="h-5 w-5" /></Button>
         </div>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -387,5 +402,14 @@ export function AdminSettings() {
         </div>
       </div>
     </div>}
+    {deleteTarget && <AdminConfirmDialog
+      title="删除服务配置"
+      description={`确定删除 ${deleteTarget.name} 配置吗？删除后需要重新录入密钥。`}
+      confirmLabel="确认删除"
+      danger
+      busy={deletingId === deleteTarget.id}
+      onClose={() => { if (!deletingId) setDeleteTarget(undefined) }}
+      onConfirm={() => void remove(deleteTarget)}
+    />}
   </div>
 }

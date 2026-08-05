@@ -37,7 +37,6 @@ import {
   fillTemplate,
   listTemplates,
   saveTemplate,
-  sendNotification,
   type NotificationTemplate,
 } from "@/lib/notifications";
 import { profile } from "@/lib/session";
@@ -977,13 +976,15 @@ function InterviewActionDialog({
                 : "系统会把面试状态更新为已通过；如果面试还没有结束，会同时写入当前结束时间。"}
             </p>
           </div>
-          <button
-            className="rounded-full p-2 hover:bg-muted"
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-10 w-10 rounded-full px-0"
             onClick={onClose}
             aria-label="关闭确认对话框"
           >
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         <div className="mt-6 rounded-3xl border border-border bg-muted/30 p-4">
           <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground">
@@ -1094,6 +1095,18 @@ function NotificationDialog({
     setBusy(true);
     setMailError("");
     try {
+      await request("/v1/notifications/site", {
+        method: "POST",
+        body: JSON.stringify({
+          recipientId: candidate?.id || interview.candidateId,
+          title: title.trim(),
+          content: content.trim(),
+          notificationType: "INTERVIEW_MESSAGE",
+          businessType: "INTERVIEW",
+          businessId: interview.id,
+          dedupeKey: `interview:${interview.id}:${Date.now()}`,
+        }),
+      });
       await request("/v1/notifications/mail-sync", {
         method: "POST",
         body: JSON.stringify({
@@ -1112,23 +1125,6 @@ function NotificationDialog({
       setBusy(false);
       return;
     }
-    sendNotification({
-      title: title.trim(),
-      content: content.trim(),
-      interviewId: String(interview.id),
-      interviewTitle: interview.title,
-      scheduledAt: interview.scheduledAt,
-      candidate: {
-        userId: String(candidate?.id || interview.candidateId),
-        username: candidate?.username || "",
-        realName: candidateName,
-      },
-      sender: {
-        userId: String(admin?.id || admin?.username || "admin"),
-        username: admin?.username || "admin",
-        realName: admin?.realName || "管理员",
-      },
-    });
     recordAuditLog({
       module: "面试管理",
       action: "发送通知",
@@ -1159,13 +1155,15 @@ function NotificationDialog({
               通知将发送给 {candidateName}。
             </p>
           </div>
-          <button
-            className="rounded-full p-2 hover:bg-muted"
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-10 w-10 rounded-full px-0"
             onClick={onClose}
             aria-label="关闭通知对话框"
           >
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <div className="mt-6 rounded-[24px] border border-border bg-muted/30 p-4">
@@ -1432,13 +1430,15 @@ function InterviewDialog({
               支持单人安排与批量排期。
             </p>
           </div>
-          <button
-            className="rounded-full p-2 hover:bg-muted"
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-10 w-10 rounded-full px-0"
             onClick={onClose}
             aria-label="关闭创建面试弹框"
           >
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <div className="mt-6 grid grid-cols-2 rounded-full border border-border bg-muted/50 p-1">
@@ -1922,9 +1922,9 @@ function LegacyInterviewDialog({
             </p>
             <h2 className="mt-1 text-2xl font-bold">创建面试</h2>
           </div>
-          <button className="rounded-full p-2 hover:bg-muted" onClick={onClose} aria-label="关闭创建面试对话框">
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={onClose} aria-label="关闭创建面试对话框">
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         <div className="mt-6 grid gap-5">
           <div>
@@ -2115,9 +2115,9 @@ function LegacyBulkDialog({
             </p>
             <h2 className="mt-1 text-2xl font-bold">批量创建面试</h2>
           </div>
-          <button className="rounded-full p-2 hover:bg-muted" onClick={onClose} aria-label="关闭批量排期对话框">
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={onClose} aria-label="关闭批量排期对话框">
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         <div className="mt-6 grid gap-5">
           <label className="text-sm font-semibold">

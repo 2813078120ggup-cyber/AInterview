@@ -107,9 +107,9 @@ export function AdminAuditLog() {
         <p className="mt-3 text-muted-foreground">记录面试、候选人、题库与系统配置的关键操作。</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={refresh}><RefreshCw className="h-4 w-4" />刷新日志</Button>
-        <Button variant="secondary" onClick={exportCsv} disabled={!filtered.length}><Download className="h-4 w-4" />导出 CSV</Button>
-        <Button variant="danger" onClick={() => setConfirmingClear(true)} disabled={!logs.length}><Trash2 className="h-4 w-4" />清空日志</Button>
+        <Button type="button" variant="secondary" className="h-9 px-4" onClick={refresh}><RefreshCw className="h-4 w-4" />刷新日志</Button>
+        <Button type="button" variant="secondary" className="h-9 px-4" onClick={exportCsv} disabled={!filtered.length}><Download className="h-4 w-4" />导出 CSV</Button>
+        <Button type="button" variant="danger" className="h-9 px-4" onClick={() => setConfirmingClear(true)} disabled={!logs.length}><Trash2 className="h-4 w-4" />清空日志</Button>
       </div>
     </header>
 

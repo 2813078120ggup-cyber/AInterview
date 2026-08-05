@@ -273,7 +273,7 @@ export function AdminWorkspace() {
           <p>最后同步</p>
           <p className="mt-1 font-medium text-foreground">{updateTime(lastUpdatedAt)}</p>
         </div>
-        <Button variant="secondary" className="h-10 px-4" disabled={loading} onClick={() => void load()}>
+        <Button type="button" variant="secondary" className="h-9 px-4" disabled={loading} onClick={() => void load()}>
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           刷新数据
         </Button>
@@ -286,7 +286,7 @@ export function AdminWorkspace() {
 
     {error && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
       <span>{error}</span>
-      <button className="font-semibold underline-offset-4 hover:underline" onClick={() => void load()}>重新加载</button>
+      <Button type="button" variant="ghost" className="h-9 px-3 text-sm" onClick={() => void load()}>重新加载</Button>
     </div>}
 
     <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

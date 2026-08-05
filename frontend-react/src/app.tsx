@@ -44,10 +44,15 @@ const CandidateLobby = lazyPage(() => import('@/pages/candidate-lobby').then(mod
 const CandidateProfile = lazyPage(() => import('@/pages/candidate-profile').then(module => ({ default: module.CandidateProfile })))
 const CandidateReport = lazyPage(() => import('@/pages/candidate-report').then(module => ({ default: module.CandidateReport })))
 const CandidateReflections = lazyPage(() => import('@/pages/candidate-reflections').then(module => ({ default: module.CandidateReflections })))
+const CandidateTickets = lazyPage(() => import('@/pages/candidate-tickets').then(module => ({ default: module.CandidateTickets })))
+const CandidateTicketCreate = lazyPage(() => import('@/pages/candidate-ticket-create').then(module => ({ default: module.CandidateTicketCreate })))
+const CandidateTicketDetail = lazyPage(() => import('@/pages/candidate-ticket-detail').then(module => ({ default: module.CandidateTicketDetail })))
 const CandidateWorkspaceOverview = lazyPage(() => import('@/pages/candidate-workspace').then(module => ({ default: module.CandidateWorkspaceOverview })))
 const FreeInterview = lazyPage(() => import('@/pages/free-interview').then(module => ({ default: module.FreeInterview })))
 const InterviewRoom = lazyPage(() => import('@/pages/interview-room').then(module => ({ default: module.InterviewRoom })))
 const LoginPage = lazyPage(() => import('@/pages/login').then(module => ({ default: module.LoginPage })))
+const AdminTickets = lazyPage(() => import('@/pages/admin-tickets').then(module => ({ default: module.AdminTickets })))
+const AdminTicketDetail = lazyPage(() => import('@/pages/admin-ticket-detail').then(module => ({ default: module.AdminTicketDetail })))
 
 function PageFallback() {
   return <div className="grid min-h-dvh place-items-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
@@ -84,6 +89,8 @@ export function App() {
         <Route path="/admin/interviews" element={<Protected admin><AdminPageShell><AdminInterviews /></AdminPageShell></Protected>} />
         <Route path="/admin/interviews/:id/review" element={<Protected admin><AdminPageShell><AdminInterviewReview /></AdminPageShell></Protected>} />
         <Route path="/admin/interviews/:id/room" element={<Protected admin><AdminPageShell><AdminInterviewReview /></AdminPageShell></Protected>} />
+        <Route path="/admin/tickets" element={<Protected admin><AdminPageShell><AdminTickets /></AdminPageShell></Protected>} />
+        <Route path="/admin/tickets/:id" element={<Protected admin><AdminPageShell><AdminTicketDetail /></AdminPageShell></Protected>} />
         <Route path="/admin/question-banks" element={<Protected admin><AdminPageShell><AdminQuestionBanks /></AdminPageShell></Protected>} />
         <Route path="/admin/question-banks/:id" element={<Protected admin><AdminPageShell><AdminQuestions /></AdminPageShell></Protected>} />
         <Route path="/admin/candidates" element={<Protected admin><AdminPageShell><AdminCandidates /></AdminPageShell></Protected>} />
@@ -97,6 +104,10 @@ export function App() {
         <Route path="/candidate/interviews/:id/room" element={<Protected><PageTransition><InterviewRoom /></PageTransition></Protected>} />
         <Route path="/candidate/interviews/:id/report" element={<Protected><PageTransition><CandidateReport /></PageTransition></Protected>} />
         <Route path="/candidate/free-interview" element={<Protected><PageTransition><FreeInterview /></PageTransition></Protected>} />
+        <Route path="/candidate/tickets" element={<Protected><CandidatePageShell><CandidateTickets /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/tickets/new" element={<Protected><CandidatePageShell><CandidateTicketCreate /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/tickets/:id/edit" element={<Protected><CandidatePageShell><CandidateTicketCreate /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/tickets/:id" element={<Protected><CandidatePageShell><CandidateTicketDetail /></CandidatePageShell></Protected>} />
         <Route path="/candidate/reports" element={<Protected><Navigate to="/reports" replace /></Protected>} />
         <Route path="/reports" element={<Protected><AbilityPage /></Protected>} />
         <Route path="/library" element={<Protected><CandidateLibrary /></Protected>} />

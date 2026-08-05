@@ -41,6 +41,14 @@ public class LocalObjectStorage {
         return new FileSystemResource(path(key));
     }
 
+    public void delete(String key) {
+        try {
+            Files.deleteIfExists(resolve(key));
+        } catch (IOException exception) {
+            throw new IllegalStateException("删除媒体文件失败", exception);
+        }
+    }
+
     private Path resolve(String key) {
         Path target = root.resolve(key).normalize();
         if (!target.startsWith(root)) throw new IllegalArgumentException("非法媒体路径");

@@ -1,6 +1,7 @@
 import { CheckCircle2, FileCode2, History, Loader2, Plus, RotateCcw, Save, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { request } from '@/lib/api'
@@ -68,6 +69,7 @@ export function AdminPromptTemplates() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [versionAction, setVersionAction] = useState<{ version: PromptVersion; rollback: boolean }>()
 
   const groups = useMemo(() => Object.entries(categoryNames).map(([code, name]) => ({
     code,
@@ -136,7 +138,6 @@ export function AdminPromptTemplates() {
   async function changeVersion(version: PromptVersion, rollback: boolean) {
     if (!detail || saving) return
     const action = rollback ? '回滚' : '激活'
-    if (!window.confirm(`确认${action}到 v${version.version}？新的 AI 请求会立即使用该版本。`)) return
     setSaving(true)
     try {
       await request(`/v1/admin/prompt-templates/${encodeURIComponent(detail.summary.code)}/versions/${version.version}/${rollback ? 'rollback' : 'activate'}`, {
@@ -148,6 +149,7 @@ export function AdminPromptTemplates() {
       setMessage(error instanceof Error ? error.message : `${action}失败，请稍后重试。`)
     } finally {
       setSaving(false)
+      setVersionAction(undefined)
     }
   }
 
@@ -163,7 +165,7 @@ export function AdminPromptTemplates() {
 
     {message && <div className="mt-6 flex items-center justify-between rounded-2xl border border-border bg-[var(--accent-soft)] px-5 py-4 text-sm text-[var(--accent)]">
       <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{message}</span>
-      <button onClick={() => setMessage('')} aria-label="关闭提示"><X className="h-4 w-4" /></button>
+      <Button type="button" variant="ghost" className="h-9 w-9 rounded-full px-0" onClick={() => setMessage('')} aria-label="关闭提示"><X className="h-4 w-4" /></Button>
     </div>}
 
     {loading ? <Card className="mt-8 flex items-center gap-3"><Loader2 className="h-5 w-5 animate-spin" />正在加载提示词版本…</Card> : <div className="mt-8 space-y-9">
@@ -191,7 +193,7 @@ export function AdminPromptTemplates() {
       <div className="mx-auto my-4 max-w-5xl rounded-[24px] bg-surface shadow-2xl sm:my-6 sm:rounded-3xl">
         <div className="flex items-start justify-between border-b border-border p-4 sm:p-6">
           <div><p className="text-xs font-semibold text-[var(--accent)]">{categoryNames[detail.summary.category]}</p><h2 className="mt-2 text-2xl font-bold">{detail.summary.name}</h2><p className="mt-1 font-mono text-xs text-muted-foreground">{detail.summary.code}</p></div>
-          <button onClick={() => { setDetail(undefined); setDraft(undefined) }} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-muted" aria-label="关闭"><X className="h-5 w-5" /></button>
+          <Button type="button" variant="ghost" className="h-10 w-10 shrink-0 rounded-full px-0" onClick={() => { setDetail(undefined); setDraft(undefined) }} aria-label="关闭"><X className="h-5 w-5" /></Button>
         </div>
 
         <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[1.25fr_.75fr] xl:gap-8">
@@ -213,7 +215,7 @@ export function AdminPromptTemplates() {
                 <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-2"><strong>v{version.version}</strong>{version.active && <Badge tone="success">当前生效</Badge>}</div><span className="text-xs text-muted-foreground">{dateText(version.createdAt)}</span></div>
                 <p className="mt-2 text-sm text-muted-foreground">{version.changeNote || '无修改说明'}</p>
                 <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold text-[var(--accent)]">查看模板正文</summary><div className="mt-3 space-y-3"><pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs leading-5">{version.systemTemplate}</pre><pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs leading-5">{version.userTemplate}</pre></div></details>
-                {!version.active && <div className="mt-4 flex justify-end"><Button variant="secondary" className="h-9 px-4" disabled={saving} onClick={() => void changeVersion(version, version.version < (detail.summary.activeVersion ?? 0))}>{version.version < (detail.summary.activeVersion ?? 0) ? <><RotateCcw className="h-4 w-4" />回滚到此版本</> : `激活 v${version.version}`}</Button></div>}
+                {!version.active && <div className="mt-4 flex justify-end"><Button type="button" variant="secondary" className="h-9 px-4" disabled={saving} onClick={() => setVersionAction({ version, rollback: version.version < (detail.summary.activeVersion ?? 0) })}>{version.version < (detail.summary.activeVersion ?? 0) ? <><RotateCcw className="h-4 w-4" />回滚到此版本</> : `激活 v${version.version}`}</Button></div>}
               </div>)}
             </div>
           </section>
@@ -227,5 +229,13 @@ export function AdminPromptTemplates() {
         </div>
       </div>
     </div>}
+    {versionAction && <AdminConfirmDialog
+      title={`${versionAction.rollback ? '回滚' : '激活'}到 v${versionAction.version.version}`}
+      description="新的 AI 请求会立即使用该版本，请确认当前操作。"
+      confirmLabel={versionAction.rollback ? '确认回滚' : '确认激活'}
+      busy={saving}
+      onClose={() => setVersionAction(undefined)}
+      onConfirm={() => void changeVersion(versionAction.version, versionAction.rollback)}
+    />}
   </div>
 }

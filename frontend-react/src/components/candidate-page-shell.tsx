@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquareWarning,
   Moon,
   NotebookPen,
   Sun,
@@ -27,10 +28,11 @@ const nav = [
   ['/workspace', '工作台', LayoutDashboard],
   ['/candidate/interviews', '面试大厅', CalendarDays],
   ['/candidate/calendar', '面试日历', CalendarRange],
-  ['/reports', '能力报告', BarChart3],
-  ['/candidate/reflections', '面试心得', NotebookPen],
   ['/algorithm', '算法练习', Code2],
   ['/library', '专项练习', BookOpen],
+  ['/reports', '能力报告', BarChart3],
+  ['/candidate/reflections', '面试心得', NotebookPen],
+  ['/candidate/tickets', '问题反馈', MessageSquareWarning],
   ['/users', '账户中心', UserRound],
 ] as const
 

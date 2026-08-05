@@ -2,6 +2,7 @@ import { ArrowLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
@@ -100,6 +101,7 @@ export function AdminQuestions() {
   const [editing, setEditing] = useState<Question | null>(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Question>()
   const [error, setError] = useState('')
   const [form, setForm] = useState<QuestionForm>(emptyForm)
 
@@ -174,8 +176,6 @@ export function AdminQuestions() {
   }
 
   async function remove(question: Question) {
-    const confirmed = window.confirm(`确认删除题目「${question.content.slice(0, 40)}」吗？删除后不可恢复。`)
-    if (!confirmed) return
     setDeletingId(question.id)
     try {
       await request(`/v1/question-banks/${id}/questions/${question.id}`, { method: 'DELETE' })
@@ -188,6 +188,7 @@ export function AdminQuestions() {
         detail: `删除题目：${question.content.slice(0, 40)}`,
       })
       setError('')
+      setDeleteTarget(undefined)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '题目删除失败，请稍后重试。')
     } finally {
@@ -198,7 +199,7 @@ export function AdminQuestions() {
   return <div className="mx-auto max-w-7xl p-4 sm:p-5 lg:p-9">
     <header className="flex flex-col gap-4 rounded-[24px] border border-border bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <button onClick={() => nav('/admin/question-banks')} className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />返回题库</button>
+        <Button type="button" variant="ghost" className="mb-2 -ml-3 h-9 px-3 text-sm text-muted-foreground hover:text-foreground" onClick={() => nav('/admin/question-banks')}><ArrowLeft className="h-4 w-4" />返回题库</Button>
         <p className="text-sm font-semibold text-[var(--accent)]">题目配置</p>
         <h1 className="mt-1 text-2xl font-bold">{bank?.name || '题目维护'}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{bank?.bankCode} · {bank?.description || '管理面试题目与评分配置'}</p>
@@ -247,7 +248,7 @@ export function AdminQuestions() {
           </div>
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
             <Button variant="secondary" className="h-9 px-3" onClick={() => openEdit(question)}><Pencil className="h-3.5 w-3.5" />修改</Button>
-            <Button variant="secondary" className="h-9 border-rose-200 bg-rose-50/70 px-3 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200 dark:hover:bg-rose-950/40" disabled={deletingId === question.id} onClick={() => void remove(question)}><Trash2 className="h-3.5 w-3.5" />删除</Button>
+            <Button type="button" variant="secondary" className="h-9 border-rose-200 bg-rose-50/70 px-3 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200 dark:hover:bg-rose-950/40" disabled={deletingId === question.id || Boolean(deleteTarget)} onClick={() => setDeleteTarget(question)}><Trash2 className="h-3.5 w-3.5" />删除</Button>
           </div>
         </article>)}
         {!items.length && <p className="p-12 text-center text-sm text-muted-foreground">暂无符合条件的题目</p>}
@@ -261,7 +262,7 @@ export function AdminQuestions() {
             <p className="text-sm font-semibold text-[var(--accent)]">{editing ? '编辑题目' : '题目配置'}</p>
             <h2 id="question-dialog-title" className="mt-1 text-2xl font-bold">{editing ? '修改题目' : '新增题目'}</h2>
           </div>
-          <button onClick={() => setOpen(false)} className="rounded-xl p-2 hover:bg-muted" aria-label="关闭题目对话框"><X className="h-5 w-5" /></button>
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={() => setOpen(false)} aria-label="关闭题目对话框"><X className="h-5 w-5" /></Button>
         </div>
 
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
@@ -305,5 +306,14 @@ export function AdminQuestions() {
         </div>
       </div>
     </div>}
+    {deleteTarget && <AdminConfirmDialog
+      title="删除题目"
+      description={`确认删除题目「${deleteTarget.content.slice(0, 40)}」吗？删除后不可恢复。`}
+      confirmLabel="确认删除"
+      danger
+      busy={deletingId === deleteTarget.id}
+      onClose={() => { if (!deletingId) setDeleteTarget(undefined) }}
+      onConfirm={() => void remove(deleteTarget)}
+    />}
   </div>
 }

@@ -1,7 +1,8 @@
-import { BookOpen, Download, Eye, EyeOff, Plus, Search, ToggleLeft, ToggleRight, Trash2, UploadCloud, X } from 'lucide-react'
+import { BookOpen, Download, Eye, EyeOff, Loader2, Plus, Search, ToggleLeft, ToggleRight, Trash2, UploadCloud, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
@@ -166,6 +167,7 @@ export function AdminQuestionBanks() {
   const [saving, setSaving] = useState(false)
   const [updatingId, setUpdatingId] = useState('')
   const [deletingId, setDeletingId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Bank>()
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
   const [bankId, setBankId] = useState('')
@@ -254,7 +256,6 @@ export function AdminQuestionBanks() {
   }
 
   async function removeBank(item: Bank) {
-    if (!window.confirm(`确定删除题库“${item.name}”吗？题库下仍有题目时无法删除。`)) return
     setDeletingId(item.id)
     try {
       await request(`/v1/question-banks/${item.id}`, { method: 'DELETE' })
@@ -268,6 +269,7 @@ export function AdminQuestionBanks() {
         detail: `删除题库 ${item.bankCode}`,
       })
       setError('')
+      setDeleteTarget(undefined)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '题库删除失败，请稍后重试。')
     } finally {
@@ -364,7 +366,7 @@ export function AdminQuestionBanks() {
             { value: "0", label: "已停用" },
           ]}
         />
-        <Button variant="secondary" onClick={() => void load()}>搜索</Button>
+        <Button type="button" variant="secondary" className="h-9 px-4" onClick={() => void load()}>搜索</Button>
       </div>
 
       {loading ? <p className="p-12 text-center text-sm text-muted-foreground">正在加载题库…</p> : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
@@ -380,15 +382,15 @@ export function AdminQuestionBanks() {
                 disabled={updating}
                 onClick={() => void updateBank(item, { status: item.status === 1 ? 0 : 1 })}
                 className={[
-                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed',
                   item.status === 1 ? 'bg-[var(--success)] text-[var(--success-foreground)] hover:brightness-95' : 'bg-muted text-muted-foreground hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]',
                   updating ? 'opacity-60' : '',
                 ].join(' ')}
                 aria-pressed={item.status === 1}
                 title={item.status === 1 ? '点击停用题库' : '点击启用题库'}
               >
-                {item.status === 1 ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                {item.status === 1 ? '已启用' : '已停用'}
+                {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : item.status === 1 ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                {updating ? '处理中…' : item.status === 1 ? '已启用' : '已停用'}
               </button>
             </div>
 
@@ -411,7 +413,7 @@ export function AdminQuestionBanks() {
                     disabled={updating || selected}
                     onClick={() => void updateBank(item, { visibility: option.value })}
                     className={[
-                      'group flex min-h-16 flex-col items-start justify-between rounded-[18px] border px-3 py-2.5 text-left transition duration-200',
+                      'group flex min-h-16 flex-col items-start justify-between rounded-[18px] border px-3 py-2.5 text-left transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed',
                       selected
                         ? 'border-[var(--accent)] bg-surface text-foreground shadow-[0_12px_28px_color-mix(in_srgb,var(--accent)_13%,transparent)]'
                         : 'border-border/80 bg-surface/45 text-muted-foreground hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--accent)_36%,var(--border))] hover:bg-surface/80 hover:text-foreground',
@@ -439,10 +441,11 @@ export function AdminQuestionBanks() {
                   variant="danger"
                   className="h-9 w-9 rounded-full p-0"
                   disabled={updating || deleting}
-                  onClick={() => void removeBank(item)}
+                  onClick={() => setDeleteTarget(item)}
+                  aria-busy={deleting}
                   aria-label={`删除题库 ${item.name}`}
                   title="删除题库"
-                ><Trash2 className="h-4 w-4" /></Button>
+                >{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</Button>
               </div>
             </div>
           </Card>
@@ -455,7 +458,7 @@ export function AdminQuestionBanks() {
       <div className="mx-auto my-4 max-w-lg rounded-[24px] bg-surface p-5 shadow-2xl sm:my-10 sm:rounded-[30px] sm:p-7">
         <div className="flex justify-between">
           <div><p className="text-sm font-semibold text-[var(--accent)]">题库配置</p><h2 id="new-bank-title" className="mt-1 text-2xl font-bold">新建题库</h2></div>
-          <button onClick={() => setDialog(false)} className="rounded-full p-2 hover:bg-muted" aria-label="关闭新建题库对话框"><X className="h-5 w-5" /></button>
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={() => setDialog(false)} aria-label="关闭新建题库对话框"><X className="h-5 w-5" /></Button>
         </div>
         <div className="mt-6 space-y-5">
           <label className="block text-sm font-semibold">题库编码<input value={form.bankCode} onChange={event => setForm({ ...form, bankCode: event.target.value })} className="mt-2 h-12 w-full rounded-2xl border border-border bg-background px-4 font-normal outline-none focus:border-[var(--accent)]" /></label>
@@ -487,7 +490,7 @@ export function AdminQuestionBanks() {
       <div className="mx-auto my-4 w-full max-w-[min(1180px,calc(100vw-2rem))] overflow-hidden rounded-[24px] bg-surface p-4 shadow-2xl sm:my-8 sm:rounded-[30px] sm:p-7">
         <div className="flex items-start justify-between">
           <div><p className="text-sm font-semibold text-[var(--accent)]">批量导入</p><h2 id="import-bank-title" className="mt-1 text-2xl font-bold">题目批量导入</h2><p className="mt-2 text-sm text-muted-foreground">支持 CSV、TSV；Excel 文件请先另存为 CSV。</p></div>
-          <button onClick={() => setImportOpen(false)} className="rounded-full p-2 hover:bg-muted" aria-label="关闭题目导入对话框"><X className="h-5 w-5" /></button>
+          <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={() => setImportOpen(false)} aria-label="关闭题目导入对话框"><X className="h-5 w-5" /></Button>
         </div>
         <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="min-w-0 bg-[var(--accent-soft)]">
@@ -525,5 +528,14 @@ export function AdminQuestionBanks() {
         </div>
       </div>
     </div>}
+    {deleteTarget && <AdminConfirmDialog
+      title="删除题库"
+      description={`确定删除题库“${deleteTarget.name}”吗？题库下仍有题目时无法删除。`}
+      confirmLabel="确认删除"
+      danger
+      busy={deletingId === deleteTarget.id}
+      onClose={() => { if (!deletingId) setDeleteTarget(undefined) }}
+      onConfirm={() => void removeBank(deleteTarget)}
+    />}
   </div>
 }

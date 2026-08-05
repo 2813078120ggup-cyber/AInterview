@@ -1,20 +1,33 @@
 import { Bell, CheckCheck, Inbox, Send, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
-import {
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-  notificationEvent,
-  type InterviewNotification,
-} from '@/lib/notifications'
-import { profile } from '@/lib/session'
+import { notificationEvent } from '@/lib/notifications'
+import { request } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 type NotificationCenterProps = {
   role: 'admin' | 'candidate'
+}
+
+type SiteNotification = {
+  id: string
+  notificationType: string
+  title: string
+  content: string
+  businessType?: string
+  businessId?: string
+  read: boolean
+  createdAt: string
+}
+
+type NotificationPage = {
+  records: SiteNotification[]
+  total: number
+  pageNo: number
+  pageSize: number
 }
 
 function shortDate(value?: string) {
@@ -23,15 +36,21 @@ function shortDate(value?: string) {
 }
 
 export function NotificationCenter({ role }: NotificationCenterProps) {
-  const current = profile()
-  const currentUserId = String(current?.id || current?.username || 'guest')
+  const navigate = useNavigate()
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
-  const [items, setItems] = useState<InterviewNotification[]>([])
+  const [items, setItems] = useState<SiteNotification[]>([])
 
-  const refresh = () => setItems(listNotifications())
+  async function refresh() {
+    try {
+      const result = await request<NotificationPage>('/v1/notifications?pageNo=1&pageSize=50')
+      setItems(result.records)
+    } catch {
+      // The notification bell should not make the surrounding workspace fail.
+    }
+  }
   const closePanel = () => {
     setOpen(false)
     window.requestAnimationFrame(() => triggerRef.current?.focus())
@@ -40,11 +59,14 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
   useEffect(() => {
     refresh()
     const onChange = () => refresh()
+    const onFocus = () => refresh()
     window.addEventListener(notificationEvent, onChange)
-    window.addEventListener('storage', onChange)
+    window.addEventListener('focus', onFocus)
+    const timer = window.setInterval(refresh, 20000)
     return () => {
       window.removeEventListener(notificationEvent, onChange)
-      window.removeEventListener('storage', onChange)
+      window.removeEventListener('focus', onFocus)
+      window.clearInterval(timer)
     }
   }, [])
 
@@ -73,17 +95,26 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
     }
   }, [open])
 
-  const visibleItems = useMemo(() => {
-    if (role === 'admin') return items
-    const username = current?.username || ''
-    const id = String(current?.id || '')
-    return items.filter(item => item.candidate.userId === id || item.candidate.username === username)
-  }, [current?.id, current?.username, items, role])
+  const visibleItems = items
 
-  const unreadCount = visibleItems.filter(item => !item.readBy.includes(currentUserId)).length
+  const unreadCount = visibleItems.filter(item => !item.read).length
 
-  const markRead = (item: InterviewNotification) => {
-    markNotificationRead(item.id, currentUserId)
+  async function markRead(item: SiteNotification) {
+    if (!item.read) {
+      await request(`/v1/notifications/${item.id}/read`, { method: 'PUT' })
+      setItems(previous => previous.map(current => current.id === item.id ? { ...current, read: true } : current))
+    }
+    if (!item.businessId) return
+    if (item.businessType === 'FEEDBACK_TICKET') {
+      navigate(role === 'admin' ? `/admin/tickets/${item.businessId}` : `/candidate/tickets/${item.businessId}`)
+    } else if (item.businessType === 'INTERVIEW') {
+      navigate(role === 'admin' ? `/admin/interviews/${item.businessId}` : `/candidate/interviews/${item.businessId}/room`)
+    }
+  }
+
+  async function markAllRead() {
+    await request('/v1/notifications/read-all', { method: 'PUT' })
+    setItems(previous => previous.map(item => ({ ...item, read: true })))
   }
 
   return (
@@ -151,7 +182,7 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
                 {unreadCount > 0 && <Button
                   variant="ghost"
                   className="h-9 shrink-0 rounded-full px-3 text-xs"
-                  onClick={() => markAllNotificationsRead(currentUserId)}
+                  onClick={markAllRead}
                 >
                   <CheckCheck className="h-4 w-4" />
                   全部标为已读
@@ -173,7 +204,7 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
               ) : (
                 <div className="space-y-2">
                   {visibleItems.map(item => {
-                    const unread = !item.readBy.includes(currentUserId)
+                    const unread = !item.read
                     return (
                       <button
                         key={item.id}
@@ -198,8 +229,7 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
                           </span>
                         </div>
                         <div className="mt-3 grid gap-1.5 border-t border-border/70 pt-3 text-xs text-muted-foreground">
-                          {role === 'admin' && <span className="break-words">发送给：{item.candidate.realName || item.candidate.username}</span>}
-                          {item.interviewTitle && <span className="break-words">面试：{item.interviewTitle}</span>}
+                          {item.businessType && <span className="break-words">来源：{item.businessType === 'FEEDBACK_TICKET' ? '反馈工单' : item.businessType === 'INTERVIEW' ? '面试通知' : item.businessType}</span>}
                           <time dateTime={item.createdAt}>{shortDate(item.createdAt)}</time>
                         </div>
                       </button>
