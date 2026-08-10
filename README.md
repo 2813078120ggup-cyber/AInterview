@@ -2,7 +2,7 @@
 
 当前项目目录：`D:\Ainterview`
 
-AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模拟面试平台，覆盖候选人练习、管理端运营、AI 追问与评分、报告复盘、音视频录制回放和算法练习。
+AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模拟面试平台，覆盖候选人练习、管理端运营、AI 追问与评分、报告复盘、音视频录制回放、算法练习、反馈工单和站内通知。
 
 ## 当前功能
 
@@ -13,6 +13,9 @@ AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模
 - 按题保存音视频分段和事件时间轴，管理端鉴权回放。
 - OpenTalking WebRTC 数字人、TTS/STT；不可用时可降级到浏览器语音能力。
 - Java 17 算法练习与 Docker 隔离判题。
+- 候选人问题反馈工单、截图附件、双向留言、管理员转派与状态流转。
+- 持久化站内通知、未读数量、已读状态和工单阅读位置。
+- 学习资料中心：管理员上传和发布 PDF、按用户授权查看/批注，候选人使用 PDF 阅读器进行高亮与个人笔记。
 - Prometheus 指标、上传安全校验、生产备份与部署维护脚本。
 
 ## 技术栈
@@ -22,8 +25,10 @@ AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模
 | 后端 | Java 17、Spring Boot 3.3、Spring Security、MyBatis-Plus、Flyway、MySQL 8、Redis |
 | AI 与数字人 | DeepSeek Provider、版本化提示词、异步 AI 任务、OpenTalking、WebRTC |
 | 前端 | React 19、TypeScript、Vite、Tailwind CSS 4、Radix UI、Framer Motion、Monaco Editor |
-| 文件与报告 | PDFBox、Apache POI、浏览器 MediaRecorder |
+| 文件与报告 | PDFBox、Apache POI、PDF.js、浏览器 MediaRecorder |
 | 交付 | Docker Compose、Nginx、GitHub Actions、Prometheus |
+
+当前数据库结构由 Flyway V1、V9–V26 管理，最新 V26 为学习资料、PDF 版本、访问权限和批注模块；V25 为反馈工单与持久化站内通知。
 
 ## 目录结构
 
@@ -46,7 +51,7 @@ D:\Ainterview\
 
 - JDK 17
 - Maven 3.9+
-- Node.js 20 与 npm
+- Node.js 22.13+ 与 npm（`pdfjs-dist` 6.x 构建要求）
 - Docker Engine 26+、Docker Compose v2+
 - 独立部署的 OpenTalking 服务（使用数字人功能时需要）
 

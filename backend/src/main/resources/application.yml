@@ -131,3 +131,7 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  health:
+    # Mail delivery is optional and provider availability must not make the core API unhealthy.
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}

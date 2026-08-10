@@ -1,4 +1,4 @@
-import { Activity, BookOpen, Bot, CalendarDays, Code2, FileCode2, History, LayoutDashboard, LogOut, Menu, MessageSquareWarning, Moon, Settings2, Sun, UserRound, X } from 'lucide-react'
+import { Activity, BookOpen, Bot, CalendarDays, Code2, FileCode2, FileText, History, LayoutDashboard, LogOut, Menu, MessageSquareWarning, Moon, Settings2, Sun, UserRound, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { NotificationCenter } from '@/components/notification-center'
@@ -13,6 +13,7 @@ const nav = [
   ['/admin/interviews', '面试管理', CalendarDays],
   ['/admin/candidates', '候选人', UserRound],
   ['/admin/question-banks', '题库管理', BookOpen],
+  ['/admin/learning-resources', '学习资料', FileText],
   ['/admin/algorithm/problems', '算法题目', Code2],
   ['/admin/tickets', '反馈工单', MessageSquareWarning],
   ['/admin/prompt-templates', '提示词版本', FileCode2],

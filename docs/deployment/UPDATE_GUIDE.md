@@ -26,7 +26,7 @@ The archive must contain:
 
 - `docker-compose.yml` and `.env.example`
 - `docs/database/docker-init/01-ai-interview-init.sql` for a new empty MySQL volume only
-- the backend image containing executable Flyway migrations V1 and V9–V24;
+- the backend image containing executable Flyway migrations V1 and V9–V26;
   do not package retired manual migration copies
 - `docs/`
 - `docs/deployment/patches/opentalking-readonly-speak.patch`

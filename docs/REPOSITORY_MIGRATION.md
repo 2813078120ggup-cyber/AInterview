@@ -1,11 +1,13 @@
 # 仓库迁移与接管指南
 
 > 当前代码目录：`D:\Ainterview`  
-> 整理日期：2026-08-04
+> 整理日期：2026-08-05
 
 ## 1. 本次迁移结果
 
 新目录保存可独立构建、测试和部署的当前项目源码，不继承旧目录的 Git 元数据。业务代码、测试、Flyway 迁移、React 前端、OpenTalking 接入、判题镜像、Docker Compose、CI 与运维脚本均已保留。
+
+当前目录已初始化为独立 Git 仓库并绑定 `https://github.com/2813078120ggup-cyber/AInterview.git`；`main` 已包含反馈工单、站内通知和管理端界面统一提交 `6d6301e`。后续迁移仓库时仍按本指南保护 `.env`、Docker 卷和服务器配置。
 
 以下内容没有迁移：
 
@@ -98,15 +100,15 @@ rg -n "replace-with-|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY" .
 | 检查 | 结果 |
 |---|---|
 | 后端测试（本次 Docker/OpenTalking 修复后） | `mvn test` 通过：55 项测试，0 失败、0 错误、0 跳过；新增 3 项 OpenTalking 上游 URL 解析测试 |
-| 数据库迁移 | 全新 Docker MySQL 数据卷成功执行当前 17 个 Flyway 版本文件，最新版本 V24；最新记录 `success=1` |
-| 前端构建 | `npm run build` 通过 |
-| 前端静态检查 | `npm run lint` 通过：0 错误；保留 18 条既有 React Hook 依赖警告 |
+| 数据库迁移 | 当前共有 19 个 Flyway 版本文件（V1、V9–V26）；本地数据库已迁移至 V26，最新记录 `success=1` |
+| 前端构建 | `npm run build` 通过；已生成 PDF.js worker，Nginx `.mjs` 响应类型验证为 `application/javascript` |
+| 前端静态检查 | `npm run lint` 通过：0 错误；保留 24 条 React Hook 依赖警告 |
 | Docker/Compose | Docker Desktop 29.6.2、Compose 5.3.1；配置解析、Java 判题镜像、后端和前端镜像构建通过 |
 | 容器运行态 | MySQL、Redis、后端、前端均运行；MySQL/Redis healthy，首页与 OpenAPI 返回 200，Actuator 为 `UP`，Redis 为 `PONG` |
 | OpenTalking API | WSL mock 8210/5280 已启动；直连和 `/opentalking` 代理的 health、runtime-config、avatars、ICE、会话创建/删除均通过 |
 | OpenTalking 浏览器链路 | Provider 测试 HTTP 200；模拟面试成功建立 WebRTC，会话媒体 `readyState=4` 且播放时间推进；对话文字与当前题目一致，朗读结束恢复“已就绪” |
 | 本地环境文件 | `.env` 与源项目文件 SHA-256 一致，必填项非空、非占位，且由 `.gitignore` 排除 |
-| 迁移完整性 | 暂存副本与 `D:\Ainterview` 的 376 个文件逐项 SHA-256 一致 |
+| 迁移完整性 | 初始暂存副本与 `D:\Ainterview` 的 376 个文件曾逐项 SHA-256 一致；后续功能更新均由当前 Git 仓库跟踪 |
 | 清理边界 | 私密文件、归档、历史前端、媒体、依赖、日志和构建产物检查通过 |
 | 文档 | 当前仓库内 Markdown 相对链接检查通过 |
 

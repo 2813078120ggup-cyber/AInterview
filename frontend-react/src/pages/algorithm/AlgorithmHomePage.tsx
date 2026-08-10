@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CalendarCheck2, CheckCircle2, Flame, ListChecks, Send, Target, TrendingUp } from 'lucide-react'
+import { ArrowRight, CalendarCheck2, CheckCircle2, Flame, ListChecks, PlaySquare, Send, Target, TrendingUp } from 'lucide-react'
 import { AlgorithmEmptyState, AlgorithmPageHeader, AlgorithmSectionHeader } from '@/components/algorithm/algorithm-page'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -32,9 +32,11 @@ export function AlgorithmHomePage() {
       <AlgorithmPageHeader
         title="算法练习"
         description="查看练习进度、推荐题目与最近提交，持续巩固编码能力。"
-        actions={<Link to="/algorithm/problems" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[var(--primary)] px-5 text-sm font-semibold text-[var(--primary-foreground)] shadow-[0_14px_34px_rgba(20,18,17,.18)] transition hover:-translate-y-0.5 sm:w-auto">
+        actions={<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><Link to="/algorithm/visualizer" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-surface px-5 text-sm font-semibold shadow-[0_8px_26px_rgba(20,18,17,.06)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] sm:w-auto">
+          <PlaySquare className="h-4 w-4" />算法可视化
+        </Link><Link to="/algorithm/problems" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[var(--primary)] px-5 text-sm font-semibold text-[var(--primary-foreground)] shadow-[0_14px_34px_rgba(20,18,17,.18)] transition hover:-translate-y-0.5 sm:w-auto">
           进入题库 <ArrowRight className="h-4 w-4" />
-        </Link>}
+        </Link></div>}
       />
 
       {error && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}

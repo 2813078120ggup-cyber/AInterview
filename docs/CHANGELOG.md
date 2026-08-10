@@ -6,6 +6,85 @@
 
 ## Unreleased
 
+### 交付基线
+
+- 2026-08-10 统一前端交付运行时：`package.json` 的 Node.js 引擎约束、GitHub Actions 与 Docker 构建均采用 Node.js 22.13 基线，避免 PDF.js 在 CI 使用 Node.js 20 造成环境漂移。
+- Compose 为 backend 增加仅通过容器内部 8081 管理端口访问 Actuator 的健康检查，frontend 等待 backend 健康后再启动；管理端口仍不向宿主机或 Nginx 发布。
+- 邮件作为可选通知渠道，默认关闭 Spring Boot Mail Health，并新增 `MAIL_HEALTH_ENABLED` 开关，避免 SMTP 暂时不可用导致核心 API 健康状态误报；新环境验证码邮件标题统一为“AInterview 验证码”。
+
+### 交付基线验证
+
+- 使用 Java 17、Maven 3.9 容器执行完整 `mvn test`，55/55 测试通过；Mail Health 配置变更后 `ActuatorEndpointTest` 1/1 再次通过；Flyway 验证 20 条迁移记录，当前版本为 V26。
+- 前端 `npm ci`、`npm run build` 与 `npm run lint` 通过，lint 为 0 个错误并保留既有 24 条 Hook 依赖警告；Node.js 22.13 Docker 构建已生成 PDF worker、学习资料和算法可视化分包。
+- `docker compose -p ainterview config --quiet`、Nginx 配置检查和 java-runner Java 17 验证通过；已重建 runner、backend、frontend 镜像，MySQL、Redis、backend、frontend 四个基础服务正常运行，backend 连续 6 次内部健康检查均返回 HTTP 200。
+- backend、frontend、java-runner 当前镜像摘要分别为 `sha256:0557205270f1445e00b57056318c7aa26eb978fadc20dc5ed04e8e1821e80359`、`sha256:9a1cc303301a046a350d01fd0bd48a30b6dbf587e5a11da2bba80be5a718921b`、`sha256:3a0462d3b2ef5e10665645576c3fc04648fc37751a2dfde7d27dae863d3b0e63`，运行容器使用的 backend/frontend 镜像与本轮构建一致。
+- 宿主机首页、登录页、学习资料页、算法可视化首页和详情页均返回 HTTP 200；未登录访问学习资料与算法题接口返回 403；OpenAPI 包含 10 条学习资料路径；PDF.js `.mjs` worker 返回 `application/javascript`。
+- 本轮未使用真实账号验证资料上传/授权/批注、算法真实提交、OpenTalking WebRTC 与实际邮件发送，避免修改现有业务数据；未执行远程镜像仓库推送、Git 暂存、提交或推送。
+
+### 算法可视化实验室
+
+- 2026-08-07 新增候选人端“算法可视化”独立入口 `/algorithm/visualizer`，按数组排序、查找、数据结构和图算法分类展示实验；算法练习首页新增可视化跳转入口，候选人导航新增“算法可视化”。
+- 新增浏览器本地 Step 引擎和共享播放器：每一步同步保存当前数据、执行代码行、活动元素、指针/队列状态和中文操作说明，支持播放、暂停、第一步、上一步、下一步、最后一步、重新开始和 0.5x–2x 速度切换。
+- 第一版新增冒泡排序、选择排序、插入排序、快速排序、二分查找、链表反转、广度优先搜索和深度优先搜索；提供数组柱状图、链表指针、图节点/边、访问顺序和复杂度展示，支持自定义数组/链表输入与二分查找目标值。
+- 可视化算法代码、Step 生成器和数组/链表/图渲染组件均位于 React 前端，不新增后端接口、数据库表或 Flyway 迁移；为后续树、堆、Dijkstra 和 Java 源码实验保留统一 kind/step 扩展边界。
+
+### 算法可视化验证
+
+- React `npm run lint` 通过（0 错误，保留项目既有 24 条 Hook 依赖警告）；`npm run build` 通过，生成独立的算法可视化首页和详情懒加载分包。
+- 已在本地开发服务的登录态浏览器中验证 `/algorithm/visualizer`、冒泡排序、BFS、链表反转和 DFS 页面；下一步、输入重算、导航跳转和浏览器本地步骤生成正常，浏览器控制台无错误。
+- 已在默认桌面视口和 390px 窄屏验证布局；窄屏页面 `document.body.scrollWidth` 未超过视口宽度，代码区保持内部横向滚动，主页面无横向溢出。
+- 本次未执行后端 Maven 或生产环境验证；本机 Docker Compose 与运行容器验收结果见下方“算法可视化 Docker 发布”。
+
+### 算法可视化 Docker 发布
+
+- 2026-08-07 使用 Docker Desktop `desktop-linux` 引擎和 Compose 项目 `ainterview` 重建 `ainterview-frontend:latest`，仅重建并重启 frontend，保留 MySQL、Redis、媒体卷和 backend 容器。
+- 容器实际运行镜像摘要为 `sha256:838e69af197b0464666e525073518b724b5a38cb41c7bf01c958f888fa2c8a03`；`/usr/share/nginx/html/assets` 已包含 `AlgorithmVisualizerPage`、`AlgorithmVisualizerDetailPage` 和算法运行时编译分包。
+- 通过宿主机 `http://127.0.0.1/algorithm/visualizer` 及冒泡排序详情页验证 Nginx 实际用户路径返回正常，详情页播放控件可加载，容器浏览器控制台无错误。
+- 本次未推送到远程 Docker Registry；当前完成的是本机 Docker Desktop 镜像构建与 Compose 容器更新。
+
+### 学习资料中心
+
+- 2026-08-06 新增 Flyway V26 学习资料模块：管理员上传私有 PDF，保存资料版本、页数、文件摘要、发布状态和下载策略；原始 PDF 继续复用现有私有媒体存储、文件签名校验、SHA-256 与可选 ClamAV 扫描，不生成公开文件 URL。
+- 新增按用户/角色授权的数据模型和管理端接口；候选人列表只返回已发布且当前账号拥有查看权限的资料，PDF 内容接口在服务端再次校验权限，未授权请求不会暴露资料是否存在。
+- 新增管理员学习资料页面：上传 PDF、填写标题和说明、发布/下线、删除资料、设置候选人查看权限及批注权限；管理端菜单新增“学习资料”。
+- 新增候选人学习资料中心和 PDF 阅读器：使用 PDF.js worker 渲染页面和文本层，支持翻页、缩放、文字选择高亮、页面便签、个人笔记编辑/删除和权限控制；批注以归一化页面坐标叠加保存，不修改原始 PDF，默认仅本人可见。
+- 新增批注持久化表，支持 HIGHLIGHT、NOTE、UNDERLINE、STRIKEOUT、RECTANGLE、INK 类型、版本号和逻辑删除；更新批注时使用版本号校验，避免并发覆盖。
+- 新增下载接口并在后端执行 `allow_download` 校验；管理员可下载，候选人只有在资料允许下载且具备查看权限时才可下载。
+- 前端新增 `pdfjs-dist` 依赖、资料路由、PDF worker 资源和资料中心导航入口；本次在用户明确要求后同步更新项目结构和相关总结文档。
+
+### 学习资料中心验证
+
+- Maven 编译和 `mvn test` 通过；Spring Boot 测试实际连接本地 MySQL，Flyway 校验 20 个迁移并确认数据库版本为 V26。
+- React `npm run lint` 通过（0 错误，保留项目已有 24 条 Hook 依赖警告），`npm run build` 通过并成功生成 PDF.js worker 与学习资料页面分包。
+- 已使用 Docker Desktop 的 `desktop-linux` 引擎，以 Compose 项目名 `ainterview` 重建 `backend` 与 `frontend`，保留 MySQL/Redis 数据卷；四个基础服务均正常运行。
+- 后端启动日志确认 Flyway 从 V25 成功迁移到 V26；`http://127.0.0.1/learning-resources` 返回新 Nginx 前端，主 bundle 已包含“学习资料”导航，资料懒加载分包可正常加载；未登录访问资料 API 返回 403，服务端权限拦截生效。
+
+### 运行时可靠性与媒体访问
+
+- 2026-08-06 将前端 Docker 构建基线从 Node 20 调整为 Node 22.13，以匹配 `pdfjs-dist@6.2.108` 的运行要求；AInterview Compose 镜像重新构建并启动验证通过。
+- 学习资料删除改为同步逻辑删除关联媒体记录，撤销已删除资料的直接媒体访问；原始文件暂不做物理删除，保留后续回收站和恢复能力，避免不可恢复的数据丢失。
+- 管理端学习资料删除操作改用共享 `AdminConfirmDialog` 站内确认弹窗，移除该页面的浏览器原生 `window.confirm`，统一按钮、处理中状态和危险操作交互。
+- 后端编译、Maven 测试、前端 lint、Docker 构建、容器启动和 localhost HTTP 验证均通过；本次没有修改项目结构总结文档。
+
+### 学习资料中心性能与交互
+
+- 新增候选人资料分页接口 `/v1/learning-resources/page`，服务端先按用户/角色和有效期过滤查看权限，再进行数据库分页，避免无权限资料影响页码统计。
+- 候选人学习资料中心新增总数、当前页码、上一页/下一页控制；保留原列表接口以兼容已有调用方。
+- 本轮分页代码通过 Maven 编译、React lint/build 和 AInterview Docker 重建；容器启动后 Flyway 保持 V26，localhost 页面返回 200，未登录访问分页 API 返回 403。
+
+### 学习资料 PDF 传输
+
+- PDF 在线阅读和下载接口现在返回上传时的安全原始文件名、准确 `Content-Length`、`Content-Disposition` 和 `X-Content-Type-Options: nosniff`；在线阅读仍只校验查看权限，下载仍额外校验下载开关。
+- 后端 Maven 编译和测试通过，AInterview backend/frontend 镜像已重建并启动；未使用真实账号和测试 PDF 做上传/下载链路回归，避免修改现有业务数据。
+
+### 文档与结构总结
+
+- 2026-08-07 按当前工作区真实代码集中更新根 README、文档索引、项目结构、当前迭代计划、需求/系统/API/数据库设计、数据字典、Flyway 指南、知识库、仓库接管和部署更新说明；补充 V26 学习资料中心、PDF 版本/权限/批注、PDF.js worker 与 Node 22.13 构建边界，不新增文档。
+- 2026-08-05 按当前 `main@6d6301e` 集中更新项目结构和阶段总结：同步根 README、文档索引、项目结构、当前迭代计划、需求/系统/API/数据库设计、数据字典、Flyway 指南、仓库接管与部署说明；不新增文档。
+- 将数据库当前基线统一为 Flyway V1、V9–V25，补充 V25 反馈工单、不可修改时间线、工单附件、持久化站内通知和阅读位置，明确后续结构迁移从 V26 开始且生产版本必须以服务器 `flyway_schema_history` 为准。
+- 将架构总结由旧 Vue/Pinia、MinIO、OpenAI 设想修正为当前 React/TypeScript/Vite、Spring Boot、MySQL、Redis、DeepSeek、OpenTalking、私有媒体卷和 Java 17 Docker 判题实现；补充工单状态机、权限、幂等、并发锁和通知接口说明。
+- 固化文档维护约定：日常更新只持续登记本更新日志，不创建新的更新文档；项目结构、设计总览和阶段总结仅在用户明确要求时集中同步。
+
 ### 算法题目与反馈工单统一
 
 - 以“面试管理”为交互基准统一算法题目与反馈工单的列表、详情布局，按钮层级、尺寸、焦点态、禁用态和异步加载反馈；反馈工单状态处理改用站内确认弹窗，移除浏览器原生 `prompt`。
@@ -110,6 +189,7 @@
 
 ### 修复
 
+- 修复学习资料 PDF 阅读器在 Docker/Nginx 环境中加载 PDF.js worker 失败的问题：为前端 Nginx 显式配置 `.mjs` 为 `application/javascript` 并返回 404 以外的有效静态文件，避免浏览器因收到 `application/octet-stream` 而拒绝动态导入 `pdf.worker.min-*.mjs`；已重建并重启 `ainterview-frontend-1` 验证 worker 文件存在且响应为 `200`、JavaScript MIME 类型。
 - 修复 OpenTalking 偶发“虚拟人声音与对话文字不一致”：模拟面试不再把追问提示词交给 OpenTalking 边生成边播，而是由后端生成并完成边界/重复度校验，再将页面最终展示的同一字符串以只朗读模式交给 OpenTalking；选择题讲评、收尾语和自由面试问题同样统一为只朗读。新增会话级朗读序列，新的朗读会先中断旧音频并淘汰尚未提交的过期请求，候选人提交回答时立即停止上一段声音，避免旧语音排队后覆盖当前文字。
 - 修复 Docker Desktop 同时为 `host.docker.internal` 写入 IPv4/IPv6、但 WSL OpenTalking 仅能通过 IPv4 到达时，Nginx 每次朗读先连接不可达 IPv6 并产生间歇延迟、502 或无声的问题；前端容器启动时从 `/etc/hosts` 提取上游的首个 IPv4 地址再生成 Nginx 配置，不依赖硬编码网关 IP，迁移到其他 Docker 主机时仍可沿用 `OPENTALKING_UPSTREAM`。移除未被镜像引用且仍指向旧 8000 端口的 `frontend-react/nginx/default.conf`，将 `*.sh`/`*.envsh` 固定为 LF 行尾，并允许 Markdown 使用双空格强制换行，避免 Windows 检出后破坏容器脚本或产生无效空白告警。
 - 修复管理端 OpenTalking Provider 使用浏览器相对地址 `/opentalking` 时，服务端“测试”按钮因 URL 缺少 scheme 而误报失败的问题：后端通过 `OPENTALKING_UPSTREAM` 解析健康检查地址，Compose 为后端补充上游变量和 `host.docker.internal:host-gateway` 映射，并新增 3 项 URL 解析回归测试。

@@ -4,7 +4,7 @@
 
 - Base URL：`/api/v1`；JSON 使用 `application/json; charset=utf-8`。
 - 认证：除认证、健康检查和受控上传回调外，全部使用 `Authorization: Bearer <accessToken>`。
-- OpenAPI：`/api/swagger-ui/index.html`；Knife4j 在生产环境仅对管理员开放。
+- OpenAPI：`/api/swagger-ui/index.html`；生产环境应通过网络边界或管理员策略限制访问。
 - 资源 ID 为无符号长整型，日期时间为 ISO-8601（例如 `2026-07-23T14:30:00+08:00`）。
 
 ### 统一返回
@@ -134,21 +134,14 @@
 
 | 方法 | 路径 | 权限 | 用途 |
 | --- | --- | --- | --- |
-| POST | `/media` | 已登录 | 上传音频、视频、图片或 PDF，并持久化媒体元数据 |
+| POST multipart | `/media` | 已登录 | 校验大小、MIME、文件签名、SHA-256 和可选 ClamAV 后保存媒体元数据与私有文件 |
 | GET | `/media/{id}`、`/media/{id}/content` | 所有者 | 查询媒体元数据 / 获取媒体内容 |
-| POST | `/interviews/{id}/questions/{qid}/audio` | 指定 CANDIDATE | 关联音频并创建转写任务 |
-| POST | `/interviews/{id}/tts` | 面试参与者 | 创建题目或提示语的 TTS 任务 |
-| POST | `/interviews/{id}/follow-ups` | 面试参与者 | 使用 Responses API 创建 AI 追问任务 |
+| POST | `/interviews/{id}/follow-ups` | 面试参与者 | 使用当前启用的 DeepSeek Provider 创建 AI 追问任务 |
 | GET | `/ai-tasks/{id}` | 创建者或管理者 | 查询持久化 AI 任务状态与结果 |
-| POST | `/media/upload-credentials` | 已登录 | 获取限制类型/大小的 MinIO 预签名上传 URL |
-| POST | `/media/{id}/complete` | 上传者 | 确认上传并校验对象元数据 |
-| GET | `/media/{id}/download-url` | 资源所有者、参与者或管理者 | 获取短期下载 URL |
-| POST | `/interviews/{id}/questions/{qid}/audio` | 指定 CANDIDATE | 关联音频并创建转写任务 |
-| POST | `/interviews/{id}/questions/{qid}/video` | 指定 CANDIDATE | 关联视频并创建分析任务 |
-| POST | `/interviews/{id}/follow-ups` | 参与者 | 创建 AI 追问任务 |
-| GET | `/interviews/{id}/ai-session` | 参与者或管理者 | 获取 AI 对话与追问状态 |
-| POST | `/interviews/{id}/tts` | 参与者 | 生成题目播报任务 |
-| GET | `/ai-tasks/{id}` | 创建者或管理者 | 查询异步任务状态与结果摘要 |
+| POST | `/interviews/{id}/ai-opening` | 面试参与者 | 创建面试开场问题/提示任务 |
+| GET | `/interviews/{id}/evaluation-task` | 面试参与者或 ADMIN | 查询报告评分任务状态 |
+| POST | `/interviews/{id}/evaluation-task/retry` | 有权用户 | 重试失败的评分任务 |
+| POST | `/interviews/{id}/evaluation-task/regenerate` | ADMIN | 重新生成已完成面试报告 |
 
 ### 2.6 评价、报告与统计
 
@@ -172,6 +165,63 @@
 | GET | `/actuator/health` | 公开或内网 | 容器健康检查 |
 | GET | `/actuator/prometheus` | 内网 | 指标抓取 |
 | GET | `/swagger-ui/index.html` | 开发公开、生产 ADMIN | OpenAPI 文档 |
+
+### 2.8 反馈工单（V25）
+
+候选人接口均校验 `CANDIDATE` 角色和工单创建者归属；管理员接口统一要求 `ADMIN`。双方共用详情、时间线、留言、附件读取和阅读位置接口，但后端会按当前用户重新鉴权。
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| POST | `/tickets` | CANDIDATE | 创建反馈工单草稿 |
+| GET | `/tickets/my` | CANDIDATE | 分页查看本人草稿和已提交工单 |
+| GET | `/tickets/{id}` | 创建者或 ADMIN | 查看工单详情、附件和未读数量 |
+| PUT/DELETE | `/tickets/{id}` | 创建者 | 修改或删除本人草稿 |
+| POST | `/tickets/{id}/submit` | 创建者 | 将草稿提交为 `PENDING` |
+| GET | `/tickets/{id}/activities` | 创建者或 ADMIN | 按活动 ID 增量获取工单时间线 |
+| POST | `/tickets/{id}/messages` | 创建者或 ADMIN | 使用 `clientRequestId` 幂等发送留言；`CLOSED` 时拒绝 |
+| POST multipart | `/tickets/{id}/attachments` | 创建者或 ADMIN | 上传工单截图；`CLOSED` 时拒绝 |
+| GET | `/tickets/{ticketId}/attachments/{attachmentId}/content` | 创建者或 ADMIN | 按工单参与者权限读取附件 |
+| PUT | `/tickets/{id}/read` | 创建者或 ADMIN | 更新当前用户最后已读活动位置 |
+| GET | `/admin/tickets` | ADMIN | 按关键词、状态、类型和处理人分页查询全部工单 |
+| GET | `/admin/tickets/assignees` | ADMIN | 查询可转派的启用管理员 |
+| PUT | `/admin/tickets/{id}/assignee` | ADMIN | 使用版本号转派或取消分配；关闭后禁止 |
+| PUT | `/admin/tickets/{id}/status` | ADMIN | 使用版本号执行合法状态流转 |
+
+状态流转为 `DRAFT → PENDING → PROCESSING → RESOLVED/CLOSED`，允许 `RESOLVED → PROCESSING`；`CLOSED` 是禁止留言、上传和继续转派的终态。
+
+### 2.9 持久化站内通知（V25）
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| GET | `/notifications` | 已登录 | 分页获取当前用户站内通知 |
+| GET | `/notifications/unread-count` | 已登录 | 获取当前用户未读总数 |
+| PUT | `/notifications/{id}/read` | 通知接收人 | 标记单条通知已读 |
+| PUT | `/notifications/read-all` | 已登录 | 标记当前用户全部通知已读 |
+| POST | `/notifications/site` | ADMIN | 创建受去重键保护的站内通知 |
+| POST | `/notifications/mail-sync` | ADMIN | 执行邮件同步；邮件失败不回滚已落库站内通知 |
+
+### 2.10 学习资料与 PDF 批注（V26）
+
+资料列表只返回已发布且当前用户拥有查看权限的记录；PDF 内容、下载和批注接口都会在后端重新校验资料状态、用户/角色权限和批注归属。管理员接口统一要求 `ADMIN`，资料上传使用 `multipart/form-data` 的 `metadata` JSON 部分和 `file` PDF 部分。
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| GET | `/learning-resources` | 已登录且有权限 | 获取当前用户可查看的资料列表 |
+| GET | `/learning-resources/page` | 已登录且有权限 | 分页查询当前用户可查看的资料 |
+| GET | `/learning-resources/{publicId}` | 已登录且有权限 | 获取资料详情和批注能力 |
+| GET | `/learning-resources/{publicId}/content` | 已登录且有权限 | 在线读取 PDF 内容；仅校验查看权限 |
+| GET | `/learning-resources/{publicId}/download` | 已登录且有权限 | 下载 PDF；除查看权限外还需 `allowDownload` |
+| GET | `/learning-resources/{publicId}/annotations` | 已登录且有权限 | 获取当前用户可见的批注 |
+| POST | `/learning-resources/{publicId}/annotations` | 已登录且可批注 | 新建高亮、便签或其他允许的批注 |
+| PUT | `/learning-resources/annotations/{annotationPublicId}` | 批注所有者且可批注 | 使用版本号更新个人笔记/批注 |
+| DELETE | `/learning-resources/annotations/{annotationPublicId}` | 批注所有者且可批注 | 逻辑删除个人批注 |
+| GET | `/admin/learning-resources` | ADMIN | 分页查询全部资料 |
+| GET | `/admin/learning-resources/{publicId}` | ADMIN | 查看管理端资料详情 |
+| POST multipart | `/admin/learning-resources` | ADMIN | 上传并创建 PDF 资料及首个版本 |
+| PUT | `/admin/learning-resources/{publicId}` | ADMIN | 修改标题、说明、发布状态和下载开关 |
+| DELETE | `/admin/learning-resources/{publicId}` | ADMIN | 逻辑删除资料并撤销关联媒体访问 |
+| GET | `/admin/learning-resources/{publicId}/permissions` | ADMIN | 查询用户/角色授权 |
+| PUT | `/admin/learning-resources/{publicId}/permissions` | ADMIN | 整体替换用户/角色查看和批注权限 |
 
 ## 3. 关键 DTO 契约
 
@@ -220,9 +270,9 @@
 
 - 每个 Controller 使用 `@Tag`，每个公开方法使用 `@Operation` 与明确的响应码说明。
 - DTO 使用 Hibernate Validator 和 `@Schema`；分页/枚举提供示例值。
-- 不将密码哈希、刷新令牌、`correctAnswer`、OpenAI 原始响应和对象存储密钥暴露于候选人接口。
+- 不将密码哈希、刷新令牌、`correctAnswer`、DeepSeek 原始请求/响应和第三方服务密钥暴露于候选人接口。
 - 接口变更仅新增字段或发布新版本，不破坏既有客户端。
 
-## 5. 第五阶段输出
+## 5. 当前实现基线
 
-后端开发将优先完成基础设施、统一返回与异常、认证/RBAC、用户/角色/岗位、题库、面试、媒体与 AI 任务、评价报告、OpenAPI 和自动化测试；每个子模块均连接 MySQL/Redis/MinIO 等真实基础设施，不提供内存示例实现。
+当前后端已实现统一响应与异常、认证/RBAC、用户/角色/岗位、题库、面试、录制、媒体、AI 任务、评价报告、算法练习、反馈工单、站内通知、学习资料/PDF 批注和 OpenAPI。业务持久化使用 MySQL/Flyway，Redis承担限流和任务协调，媒体保存在受保护的本地存储卷。日常接口变更只持续登记 `docs/CHANGELOG.md`；在用户明确要求集中更新结构总结时再同步本文件。数据库变更从 Flyway V27 开始。

@@ -603,3 +603,52 @@
 | `algorithm_note` | `user_id`、`problem_id`、`content_md` | 用户个人笔记，每用户每题唯一 |
 
 V22 修正种子题和测试用例；V23 扩充题库并增加 `algorithm_problem.solution_code`；V24 将所有 `starter_code` 对齐为不泄露答案的用户答题模板。标准答案只允许管理端接口读取和维护，候选人接口不得返回 `solution_code`。
+
+## 17. V25 反馈工单与站内通知
+
+| 表名 | 关键字段 | 用途 |
+|---|---|---|
+| `feedback_ticket` | `ticket_no`、`creator_id`、`ticket_type`、`status`、`assignee_id`、`resolution`、`version`、各状态时间、`last_activity_at` | 工单主记录；支持草稿、提交、处理、解决、关闭和管理员转派 |
+| `feedback_ticket_activity` | `ticket_id`、`actor_id`、`activity_type`、状态/处理人前后值、`client_request_id` | 不可修改时间线，统一保存留言、提交、状态变化和转派记录 |
+| `feedback_ticket_attachment` | `ticket_id`、`activity_id`、`media_id`、`uploader_id` | 将现有受保护媒体对象绑定到工单或某条留言 |
+| `feedback_ticket_read_state` | `ticket_id`、`user_id`、`last_read_activity_id` | 记录每名参与者在工单中最后读到的活动，用于计算新回复数 |
+| `site_notification` | `recipient_id`、`notification_type`、`business_type`、`business_id`、`dedupe_key`、`read_at` | 跨浏览器、跨设备持久化站内通知及已读状态 |
+
+### 17.1 枚举与状态规则
+
+- 工单类型：`INTERVIEW_FAILURE`、`FEATURE_SUGGESTION`、`BUG_REPORT`。
+- 工单状态：`DRAFT → PENDING → PROCESSING → RESOLVED/CLOSED`，允许 `RESOLVED → PROCESSING`；`CLOSED` 为禁止留言和附件上传的终态。
+- 活动类型：`COMMENT`、`STATUS_CHANGE`、`ASSIGNMENT`、`SUBMITTED`。
+
+### 17.2 唯一性、索引与删除策略
+
+- `uk_feedback_ticket_no` 保证可读工单号唯一。
+- `uk_feedback_activity_client_request(ticket_id, client_request_id)` 保证留言重试幂等。
+- `uk_feedback_attachment_media(media_id)` 防止同一媒体对象重复绑定。
+- `uk_site_notification_recipient_dedupe(recipient_id, dedupe_key)` 防止同一业务事件重复通知同一用户。
+- `feedback_ticket_read_state` 以 `(ticket_id, user_id)` 为联合主键。
+- 删除工单时级联清理活动、附件关系和阅读位置；媒体元数据使用 RESTRICT 保留完整性，实际文件由媒体生命周期统一管理。
+
+## 18. V26 学习资料与 PDF 批注
+
+| 表名 | 关键字段 | 用途 |
+|---|---|---|
+| `learning_resource` | `public_id`、`title`、`status`、`allow_download`、`current_version_id`、`created_by`、`deleted_at` | 管理端维护的 PDF 学习资料主记录，支持草稿、发布、下线和逻辑删除 |
+| `learning_resource_version` | `resource_id`、`version_no`、`media_id`、`original_name`、`file_size`、`checksum_sha256`、`page_count` | 保存每次上传的私有媒体引用、原始文件名、摘要、大小和 PDF 页数；当前版本由主表引用 |
+| `learning_resource_permission` | `resource_id`、`subject_type`、`subject_id`、`can_view`、`can_annotate`、`expires_at` | 按用户或角色授予查看/批注权限，支持过期时间；可批注必须同时可查看 |
+| `learning_resource_annotation` | `public_id`、`resource_id`、`version_id`、`owner_user_id`、`page_index`、`annotation_type`、`geometry_json`、`note_content`、`version` | 保存高亮、下划线、删除线、便签、矩形和画笔批注；几何数据为归一化页面坐标，默认个人可见 |
+
+### 18.1 枚举与状态规则
+
+- 资料状态：`DRAFT`、`PUBLISHED`、`OFFLINE`；只有 `PUBLISHED` 且权限有效时才返回给候选人。
+- 权限主体：`USER` 或 `ROLE`；`subject_id` 保存用户 ID 或角色代码，权限可以分别控制查看和批注。
+- 批注类型：`HIGHLIGHT`、`UNDERLINE`、`STRIKEOUT`、`NOTE`、`RECTANGLE`、`INK`。
+- 批注锚点：`POSITION`、`TEXT`、`PAGE`；可见性：`PRIVATE`、`ADMIN_VISIBLE`、`PUBLIC`，当前前端创建的个人笔记使用 `PRIVATE`。
+
+### 18.2 外键、索引与文件边界
+
+- `learning_resource.public_id` 唯一，用于前端路由和 API 对外标识；数据库自增 ID 不直接暴露为资料地址。
+- `learning_resource_version.resource_id + version_no` 唯一，`media_id` 唯一；`current_version_id` 指向当前有效版本。
+- `learning_resource_permission.resource_id + subject_type + subject_id` 唯一，避免重复授权；查询按主体和过期时间建立索引。
+- `learning_resource_annotation.public_id` 唯一；按资料、版本、所有者、页码和逻辑删除状态建立查询索引，更新时使用 `version` 做乐观并发校验。
+- PDF 文件本体继续存放在 `media_file` 对应的私有媒体卷，数据库只保存元数据和引用；删除资料会逻辑删除资料及关联媒体记录，但当前实现不物理删除文件，保留后续回收/恢复空间。

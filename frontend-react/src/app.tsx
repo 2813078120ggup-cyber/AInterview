@@ -31,14 +31,19 @@ const AdminPromptTemplates = lazyPage(() => import('@/pages/admin-prompt-templat
 const AdminSettings = lazyPage(() => import('@/pages/admin-settings').then(module => ({ default: module.AdminSettings })))
 const AdminWorkspace = lazyPage(() => import('@/pages/admin-workspace').then(module => ({ default: module.AdminWorkspace })))
 const AdminAlgorithmProblems = lazyPage(() => import('@/pages/admin/AdminAlgorithmProblemsPage').then(module => ({ default: module.AdminAlgorithmProblemsPage })))
+const AdminLearningResources = lazyPage(() => import('@/pages/admin-learning-resources').then(module => ({ default: module.AdminLearningResources })))
 const AbilityDashboard = lazyPage(() => import('@/pages/ability-dashboard').then(module => ({ default: module.AbilityDashboard })))
 const AlgorithmHomePage = lazyPage(() => import('@/pages/algorithm/AlgorithmHomePage').then(module => ({ default: module.AlgorithmHomePage })))
+const AlgorithmVisualizerPage = lazyPage(() => import('@/pages/algorithm/AlgorithmVisualizerPage').then(module => ({ default: module.AlgorithmVisualizerPage })))
+const AlgorithmVisualizerDetailPage = lazyPage(() => import('@/pages/algorithm/AlgorithmVisualizerDetailPage').then(module => ({ default: module.AlgorithmVisualizerDetailPage })))
 const ProblemDetailPage = lazyPage(() => import('@/pages/algorithm/ProblemDetailPage').then(module => ({ default: module.ProblemDetailPage })))
 const ProblemListPage = lazyPage(() => import('@/pages/algorithm/ProblemListPage').then(module => ({ default: module.ProblemListPage })))
 const SubmissionDetailPage = lazyPage(() => import('@/pages/algorithm/SubmissionDetailPage').then(module => ({ default: module.SubmissionDetailPage })))
 const SubmissionListPage = lazyPage(() => import('@/pages/algorithm/SubmissionListPage').then(module => ({ default: module.SubmissionListPage })))
 const WrongProblemPage = lazyPage(() => import('@/pages/algorithm/WrongProblemPage').then(module => ({ default: module.WrongProblemPage })))
 const CandidateLibrary = lazyPage(() => import('@/pages/candidate-library').then(module => ({ default: module.CandidateLibrary })))
+const LearningResources = lazyPage(() => import('@/pages/learning-resources').then(module => ({ default: module.LearningResources })))
+const LearningResourceViewer = lazyPage(() => import('@/pages/learning-resource-viewer').then(module => ({ default: module.LearningResourceViewer })))
 const CandidateCalendar = lazyPage(() => import('@/pages/candidate-calendar').then(module => ({ default: module.CandidateCalendar })))
 const CandidateLobby = lazyPage(() => import('@/pages/candidate-lobby').then(module => ({ default: module.CandidateLobby })))
 const CandidateProfile = lazyPage(() => import('@/pages/candidate-profile').then(module => ({ default: module.CandidateProfile })))
@@ -71,7 +76,7 @@ function Protected({ children, admin = false }: { children: ReactNode; admin?: b
 
 function CandidateWorkspace() {
   return <CandidatePageShell>
-    <Routes><Route path="/workspace" element={<CandidateWorkspaceOverview />} /><Route path="/candidate/interviews" element={<CandidateLobby />} /><Route path="/candidate/calendar" element={<CandidateCalendar />} /><Route path="/candidate/reflections" element={<CandidateReflections />} /><Route path="/algorithm" element={<AlgorithmHomePage />} /><Route path="/algorithm/problems" element={<ProblemListPage />} /><Route path="/algorithm/problems/:problemId" element={<ProblemDetailPage />} /><Route path="/algorithm/submissions" element={<SubmissionListPage />} /><Route path="/algorithm/submissions/:submissionId" element={<SubmissionDetailPage />} /><Route path="/algorithm/wrong-problems" element={<WrongProblemPage />} /><Route path="*" element={<CandidateWorkspaceOverview />} /></Routes>
+    <Routes><Route path="/workspace" element={<CandidateWorkspaceOverview />} /><Route path="/candidate/interviews" element={<CandidateLobby />} /><Route path="/candidate/calendar" element={<CandidateCalendar />} /><Route path="/candidate/reflections" element={<CandidateReflections />} /><Route path="/algorithm" element={<AlgorithmHomePage />} /><Route path="/algorithm/visualizer" element={<AlgorithmVisualizerPage />} /><Route path="/algorithm/visualizer/:algorithmSlug" element={<AlgorithmVisualizerDetailPage />} /><Route path="/algorithm/problems" element={<ProblemListPage />} /><Route path="/algorithm/problems/:problemId" element={<ProblemDetailPage />} /><Route path="/algorithm/submissions" element={<SubmissionListPage />} /><Route path="/algorithm/submissions/:submissionId" element={<SubmissionDetailPage />} /><Route path="/algorithm/wrong-problems" element={<WrongProblemPage />} /><Route path="*" element={<CandidateWorkspaceOverview />} /></Routes>
   </CandidatePageShell>
 }
 
@@ -100,6 +105,8 @@ export function App() {
         <Route path="/admin/ai-generations" element={<Protected admin><AdminPageShell><AdminAiGenerations /></AdminPageShell></Protected>} />
       <Route path="/admin/audit-logs" element={<Protected admin><AdminPageShell><AdminAuditLog /></AdminPageShell></Protected>} />
       <Route path="/admin/algorithm/problems" element={<Protected admin><AdminPageShell><AdminAlgorithmProblems /></AdminPageShell></Protected>} />
+      <Route path="/admin/learning-resources" element={<Protected admin><AdminPageShell><AdminLearningResources /></AdminPageShell></Protected>} />
+      <Route path="/admin/learning-resources/:publicId" element={<Protected admin><AdminPageShell><LearningResourceViewer /></AdminPageShell></Protected>} />
       <Route path="/admin" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
         <Route path="/candidate/interviews/:id/room" element={<Protected><PageTransition><InterviewRoom /></PageTransition></Protected>} />
         <Route path="/candidate/interviews/:id/report" element={<Protected><PageTransition><CandidateReport /></PageTransition></Protected>} />
@@ -111,6 +118,8 @@ export function App() {
         <Route path="/candidate/reports" element={<Protected><Navigate to="/reports" replace /></Protected>} />
         <Route path="/reports" element={<Protected><AbilityPage /></Protected>} />
         <Route path="/library" element={<Protected><CandidateLibrary /></Protected>} />
+        <Route path="/learning-resources" element={<Protected><CandidatePageShell><LearningResources /></CandidatePageShell></Protected>} />
+        <Route path="/learning-resources/:publicId" element={<Protected><CandidatePageShell><LearningResourceViewer /></CandidatePageShell></Protected>} />
         <Route path="/users" element={<Protected><CandidateProfile /></Protected>} />
         <Route path="/interviews" element={<Navigate to="/candidate/interviews" replace />} />
         <Route path="/" element={<Navigate to="/login" replace />} />

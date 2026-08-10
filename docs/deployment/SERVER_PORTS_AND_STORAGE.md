@@ -110,9 +110,9 @@ docker volume inspect ai-interview-platform_media_data
 | `.env`、`ssl/`、生产 Nginx 模板 | 否 | 是 |
 | `mysql_data`、`redis_data`、`media_data` | 否 | 是 |
 | OpenTalking `.env`、TURN 配置、模型运行目录 | 否 | 是 |
-| 已发布/待发布 Flyway 迁移 V1、V9–V24 | 否 | 不手工重跑 |
+| 已发布/待发布 Flyway 迁移 V1、V9–V26 | 否 | 不手工重跑 |
 
-代码库当前最新迁移为 V19，生产仍为 V17；后续数据库结构变更从 V20 起新增 Flyway 脚本。应用镜像回退不等于数据库回退，数据库回退依赖更新前的 MySQL 备份。V19 发布前还需估算并验证 `media_data` 可用空间，至少覆盖预期并发面试、单场时长和保留周期。
+代码库当前最新迁移为 V26；生产数据库版本必须在服务器查询 `flyway_schema_history`，不能根据旧文档推断。后续数据库结构变更从 V27 起新增 Flyway 脚本。应用镜像回退不等于数据库回退，数据库回退依赖更新前的 MySQL 备份；发布学习资料 PDF、录制与工单附件能力前还需估算并验证 `media_data` 可用空间和保留周期。
 
 ## 5. 更新前后检查
 

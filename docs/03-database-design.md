@@ -41,6 +41,21 @@ erDiagram
   USER ||--o{ INTERVIEW_REFLECTION : writes
   USER ||--o{ REFRESH_TOKEN : authenticates
   USER ||--o{ OPERATION_LOG : operates
+  USER ||--o{ FEEDBACK_TICKET : creates
+  USER ||--o{ FEEDBACK_TICKET : handles
+  FEEDBACK_TICKET ||--o{ FEEDBACK_TICKET_ACTIVITY : contains
+  FEEDBACK_TICKET ||--o{ FEEDBACK_TICKET_ATTACHMENT : attaches
+  MEDIA_FILE ||--o| FEEDBACK_TICKET_ATTACHMENT : stores
+  FEEDBACK_TICKET ||--o{ FEEDBACK_TICKET_READ_STATE : tracks
+  USER ||--o{ FEEDBACK_TICKET_READ_STATE : reads
+  USER ||--o{ SITE_NOTIFICATION : receives
+  USER ||--o{ LEARNING_RESOURCE : creates
+  LEARNING_RESOURCE ||--o{ LEARNING_RESOURCE_VERSION : versions
+  MEDIA_FILE ||--o{ LEARNING_RESOURCE_VERSION : stores
+  LEARNING_RESOURCE ||--o{ LEARNING_RESOURCE_PERMISSION : grants
+  LEARNING_RESOURCE ||--o{ LEARNING_RESOURCE_ANNOTATION : contains
+  LEARNING_RESOURCE_VERSION ||--o{ LEARNING_RESOURCE_ANNOTATION : anchors
+  USER ||--o{ LEARNING_RESOURCE_ANNOTATION : writes
 ```
 
 ## 3. 表职责
@@ -52,6 +67,8 @@ erDiagram
 | 面试过程 | `interview`、`interview_question`、`interview_answer`、`media_file`、`interview_recording`、`interview_recording_segment`、`interview_timeline_event` | 排期、题目快照、作答、媒体对象、面试方式、录制分段与时间轴 |
 | AI 能力 | `ai_session`、`ai_message`、`ai_task` | 多轮对话、追问、转写、评分、任务重试 |
 | 评价与报告 | `evaluation`、`report`、`interview_reflection` | AI/人工评分、报告生成与发布、候选人面试复盘 |
+| 服务与通知 | `feedback_ticket`、`feedback_ticket_activity`、`feedback_ticket_attachment`、`feedback_ticket_read_state`、`site_notification` | 反馈工单、时间线、附件授权、未读位置和持久化站内通知 |
+| 学习资料 | `learning_resource`、`learning_resource_version`、`learning_resource_permission`、`learning_resource_annotation` | PDF 资料、版本文件、用户/角色权限和页面批注/笔记 |
 | 审计 | `operation_log` | 管理和敏感操作审计 |
 
 ## 4. 数据一致性与索引策略
@@ -67,13 +84,21 @@ erDiagram
 - 高频路径建立索引：用户状态、题库检索、候选人/面试官排期、面试状态、任务领取、报告发布和审计查询。
 - 报告采用一场面试一份主报告约束；报告版本通过 `generation_version` 和任务审计追溯，不复制面试记录。
 - `interview_reflection` 对 `interview_id` 唯一；服务端仅允许本场候选人在面试结束后写入。自评分与信心程度使用数据库范围约束，AI 分数从已发布报告动态关联。
+- `feedback_ticket.ticket_no` 唯一；候选人只能操作本人草稿和查看本人工单，管理员可以查看全部工单并转派给有效 ADMIN。
+- 工单状态限定为 `DRAFT`、`PENDING`、`PROCESSING`、`RESOLVED`、`CLOSED`；`version` 用于状态和转派并发校验，事务内行锁保证关闭与留言不会交叉写入。
+- `feedback_ticket_activity` 是不可修改的统一时间线；`ticket_id + client_request_id` 唯一，防止网络重试生成重复留言。
+- `feedback_ticket_attachment.media_id` 唯一并复用 `media_file`；下载前按工单参与者重新鉴权，不能只使用媒体上传者权限。
+- `feedback_ticket_read_state` 使用 `ticket_id + user_id` 联合主键；`site_notification` 使用 `recipient_id + dedupe_key` 去重并按接收人、已读状态和时间查询。
+- `learning_resource` 以 `public_id` 对外标识并使用 `deleted_at` 逻辑删除；`learning_resource_version.media_id` 唯一引用私有媒体，当前版本由 `current_version_id` 指向。
+- `learning_resource_permission` 支持 `USER`/`ROLE` 主体、查看/批注能力和过期时间，数据库约束保证可批注时必须可查看；服务端还会检查资料必须为 `PUBLISHED`。
+- `learning_resource_annotation` 以资料版本和页码归属，几何数据以 JSON 保存归一化页面坐标；`owner_user_id` 隔离个人批注，`version` 用于更新时的乐观并发校验。
 
 ## 5. 初始化与迁移策略
 
 完整空库基线由 [V1__baseline_schema.sql](../backend/src/main/resources/db/migration/V1__baseline_schema.sql) 提供，并随后端 JAR 由 Flyway 执行。历史的分离建表、种子数据和替代全量结构脚本已归档，不再作为初始化入口。
 
-现网升级使用 Flyway 版本化迁移：既有非空库以 V8 建基线后按顺序执行 V9 及后续脚本；空库执行 V1 基线后继续执行后续版本。当前最新结构迁移为 V24 算法题目模板对齐，V20–V24 依次覆盖面试心得和算法练习中心。迁移按“新增表 → 新增列/索引 → 数据回填 → 应用切换”的顺序前进，不使用破坏性重建，也不修改已发布脚本。详见 [数据库脚本与 Flyway 迁移指南](database/README.md)。
+现网升级使用 Flyway 版本化迁移：既有非空库以 V8 建基线后按顺序执行 V9 及后续脚本；空库执行 V1 基线后继续执行后续版本。当前最新结构迁移为 V26 学习资料中心，V20–V25 依次覆盖面试心得、算法练习中心、反馈工单和持久化站内通知。迁移按“新增表 → 新增列/索引 → 数据回填 → 应用切换”的顺序前进，不使用破坏性重建，也不修改已发布脚本；下一次结构变更从 V27 开始。详见 [数据库脚本与 Flyway 迁移指南](database/README.md)。
 
 ## 6. 测试数据策略
 
-测试数据脚本将以事务和可重复的固定命名规则生成：5 名管理员、20 名面试官、100 名候选人、1,100 道分领域题目与 100 场关联面试。密码由 Spring Security BCrypt 生成且所有外键按依赖顺序写入。
+空 Docker 数据卷使用 `docs/database/docker-init/01-ai-interview-init.sql` 创建开发基线；手工场景使用 `docs/database/local-test-interview-scenarios.sql`。自动化测试数据应使用唯一前缀或事务回滚并在完成后清理，不把真实候选人简历、回答、录音、视频或生产凭据写入仓库。

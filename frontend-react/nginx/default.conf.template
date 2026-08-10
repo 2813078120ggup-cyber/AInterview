@@ -34,6 +34,13 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # PDF.js loads its worker as an ES module. Alpine's default Nginx MIME
+    # map does not always include .mjs, so explicitly serve it as JavaScript.
+    location ~* \.mjs$ {
+        default_type application/javascript;
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
