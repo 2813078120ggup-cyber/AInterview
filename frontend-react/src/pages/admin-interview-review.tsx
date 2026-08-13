@@ -240,10 +240,10 @@ export function AdminInterviewReview() {
     playSegment(segment, (event.offsetMs - segment.startedOffsetMs) / 1000)
   }
 
-  if (loading) return <div className="p-5 lg:p-8"><Card>正在加载面试回顾…</Card></div>
-  if (!interview) return <div className="p-5 lg:p-8"><Card><p className="text-rose-700">{error || '面试不存在或无权访问。'}</p><Button type="button" variant="secondary" className="mt-5 h-9 px-4" onClick={() => navigate('/admin/interviews')}>返回面试管理</Button></Card></div>
+  if (loading) return <div><Card>正在加载面试回顾…</Card></div>
+  if (!interview) return <div><Card><p className="text-rose-700">{error || '面试不存在或无权访问。'}</p><Button type="button" variant="secondary" className="mt-5 h-9 px-4" onClick={() => navigate('/admin/interviews')}>返回面试管理</Button></Card></div>
 
-  return <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-5 lg:p-8">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div><Button type="button" variant="ghost" className="-ml-3 h-9 px-3 text-sm text-muted-foreground hover:text-foreground" onClick={() => navigate('/admin/interviews')}><ArrowLeft className="h-4 w-4" />返回面试管理</Button><p className="mt-4 text-sm font-semibold text-[var(--accent)]">面试回顾</p><h1 className="mt-1 text-3xl font-bold tracking-tight">{interview.title}</h1><p className="mt-2 text-muted-foreground">查看题目、作答与音视频时间轴。</p></div>
       <div className="flex gap-2"><Badge tone={interviewStatusTone(interview.status)}>{interviewStatusText[interview.status] ?? '未知状态'}</Badge>{canViewReport(interview.status) && <Button onClick={() => navigate(`/admin/interviews?reportInterviewId=${interview.id}`)}><FileChartColumn className="h-4 w-4" />查看评测报告</Button>}</div>

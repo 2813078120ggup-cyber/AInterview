@@ -147,7 +147,7 @@ export function AdminLearningResources() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div><p className="text-sm font-semibold text-[var(--accent)]">内容与权限</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">学习资料中心</h1><p className="mt-3 max-w-2xl text-muted-foreground">上传私有 PDF，按候选人分配查看和批注权限。</p></div>
       <Button onClick={() => setUploadOpen(true)}><FileUp className="h-4 w-4" />上传 PDF</Button>

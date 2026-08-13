@@ -3,7 +3,9 @@ package com.tyut.aiinterview.common;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -23,6 +25,16 @@ public class GlobalExceptionHandler {
                 .findFirst().map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("请求参数不合法");
         return ResponseEntity.badRequest().body(ApiResponse.failure(40001, message));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException exception) {
+        return ResponseEntity.status(403).body(ApiResponse.failure(40300, "无权执行此操作"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
+        return ResponseEntity.status(405).body(ApiResponse.failure(40500, "请求方法不支持"));
     }
 
     @ExceptionHandler(Exception.class)

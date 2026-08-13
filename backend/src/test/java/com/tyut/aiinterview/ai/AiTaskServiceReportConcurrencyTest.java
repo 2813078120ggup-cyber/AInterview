@@ -1,12 +1,15 @@
 package com.tyut.aiinterview.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.domain.AiTask;
 import com.tyut.aiinterview.domain.Evaluation;
@@ -32,12 +35,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class AiTaskServiceReportConcurrencyTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService scoringExecutor = Executors.newFixedThreadPool(3);
+
+    @BeforeEach
+    void initializeMyBatisPlusLambdaMetadata() {
+        Configuration configuration = new Configuration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "test");
+        for (Class<?> entityType : List.of(AiTask.class, Interview.class, InterviewQuestion.class,
+                InterviewAnswer.class, Evaluation.class, Report.class)) {
+            if (TableInfoHelper.getTableInfo(entityType) == null) {
+                TableInfoHelper.initTableInfo(assistant, entityType);
+            }
+        }
+    }
 
     @AfterEach
     void shutdownExecutor() {
@@ -110,7 +128,8 @@ class AiTaskServiceReportConcurrencyTest {
         AiTaskService service = new AiTaskService(taskMapper, interviewMapper, interviewQuestionMapper, answerMapper,
                 questionMapper, evaluationMapper, reportMapper, mock(FreeInterviewSessionMapper.class),
                 mock(FreeInterviewTurnMapper.class), gateway, prompts, mock(ChoiceAnswerScorer.class),
-                objectMapper, currentUser, Runnable::run, scoringExecutor, 12);
+                objectMapper, currentUser, mock(com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService.class),
+                Runnable::run, scoringExecutor, 12);
 
         CompletableFuture<Void> processing = CompletableFuture.runAsync(() -> service.process(51L));
         assertTrue(allScoringCallsStarted.await(2, TimeUnit.SECONDS), "三道主观题应并行进入评分调用");
@@ -120,6 +139,8 @@ class AiTaskServiceReportConcurrencyTest {
 
         assertEquals("SUCCESS", task.getStatus());
         assertEquals(Interview.REPORT_READY, interview.getStatus());
+        verify(reportMapper).insert(org.mockito.ArgumentMatchers.<Report>argThat(report ->
+                Integer.valueOf(0).equals(report.getStatus()) && report.getPublishedAt() == null));
     }
 
     private AiTask evaluationTask() {

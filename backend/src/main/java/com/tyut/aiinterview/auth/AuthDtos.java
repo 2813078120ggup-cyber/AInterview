@@ -32,7 +32,22 @@ public final class AuthDtos {
 
     public record LogoutRequest(@NotBlank String refreshToken) {}
 
+    public record PasswordResetCodeRequest(@NotBlank String channel, @NotBlank String target) {}
+
+    public record PasswordResetRequest(
+            @NotBlank String channel,
+            @NotBlank String target,
+            @NotBlank(message = "验证码不能为空") String verificationCode,
+            @NotBlank(message = "新密码不能为空")
+            @Pattern(regexp = AccountCredentialPolicy.PASSWORD_REGEX,
+                    message = AccountCredentialPolicy.PASSWORD_MESSAGE) String newPassword) {}
+
+    public record PasswordResetCodeResponse(boolean accepted, long cooldownSeconds, long expiresInSeconds,
+                                            String message) {}
+
+    public record PasswordResetResponse(String sessionBehavior) {}
+
     public record LoginResponse(String token, String refreshToken, UserProfile user) {}
 
-    public record UserProfile(Long id, String username, String realName, List<String> roles) {}
+    public record UserProfile(Long id, String username, String realName, List<String> roles, Long companyId) {}
 }

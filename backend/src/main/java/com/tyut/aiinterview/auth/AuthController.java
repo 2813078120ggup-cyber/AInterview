@@ -15,10 +15,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
     private final VerificationCodeService verificationCodeService;
+    private final PasswordResetService passwordResetService;
     private final CurrentUser currentUser;
-    public AuthController(AuthService authService, VerificationCodeService verificationCodeService, CurrentUser currentUser) {
+    public AuthController(AuthService authService, VerificationCodeService verificationCodeService,
+                          PasswordResetService passwordResetService, CurrentUser currentUser) {
         this.authService = authService;
         this.verificationCodeService = verificationCodeService;
+        this.passwordResetService = passwordResetService;
         this.currentUser = currentUser;
     }
 
@@ -52,6 +55,16 @@ public class AuthController {
     public ApiResponse<Void> logout(@Valid @RequestBody AuthDtos.LogoutRequest request) {
         authService.logout(request, currentUser.id());
         return ApiResponse.ok();
+    }
+    @PostMapping("/password/reset/code")
+    public ApiResponse<AuthDtos.PasswordResetCodeResponse> sendPasswordResetCode(
+            @Valid @RequestBody AuthDtos.PasswordResetCodeRequest request) {
+        return ApiResponse.ok(passwordResetService.sendCode(request));
+    }
+    @PostMapping("/password/reset")
+    public ApiResponse<AuthDtos.PasswordResetResponse> resetPassword(
+            @Valid @RequestBody AuthDtos.PasswordResetRequest request) {
+        return ApiResponse.ok(passwordResetService.reset(request));
     }
     @GetMapping("/me")
     public ApiResponse<AuthDtos.UserProfile> me() {

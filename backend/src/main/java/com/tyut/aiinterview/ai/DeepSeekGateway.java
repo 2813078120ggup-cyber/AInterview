@@ -150,6 +150,21 @@ public class DeepSeekGateway {
         return executeJson(prompt, context, 900, 45);
     }
 
+    public Generated<JsonNode> matchResumeToJob(String jobTitle, String jobDescription, String requirements,
+                                                String skillTags, String resumeProfile, String resumeSkills,
+                                                String resumeText, AiGenerationContext context) {
+        Map<String, Object> variables = Map.ofEntries(
+                Map.entry("jobTitle", blankToDefault(jobTitle, "未填写")),
+                Map.entry("jobDescription", blankToDefault(jobDescription, "未填写")),
+                Map.entry("requirements", blankToDefault(requirements, "未填写")),
+                Map.entry("skillTags", blankToDefault(skillTags, "未填写")),
+                Map.entry("resumeProfile", blankToDefault(resumeProfile, "未形成结构化画像")),
+                Map.entry("resumeSkills", blankToDefault(resumeSkills, "未提取技能")),
+                Map.entry("resumeText", blankToDefault(resumeText, "未提供可读文本")));
+        PromptTemplateService.RenderedPrompt prompt = promptTemplates.render(PromptCatalog.RECRUITMENT_JOB_MATCH, variables);
+        return executeJson(prompt, context, 700, 60);
+    }
+
     public String generateFreeInterviewFollowUp(String resumeSummary, String transcript, int nextTurn) {
         return generateFreeInterviewFollowUp(resumeSummary, transcript, nextTurn,
                 AiGenerationContext.standalone("FREE_FOLLOW_UP")).content();
@@ -186,7 +201,8 @@ public class DeepSeekGateway {
             httpStatus = completion.httpStatus();
             auditService.success(audit, completion.content().length(), completion.promptTokens(),
                     completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
-            return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), completion.content());
+            return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), completion.content(),
+                    provider.code(), provider.model());
         } catch (RuntimeException exception) {
             auditService.failure(audit, exception, status(exception, httpStatus));
             throw exception;
@@ -209,7 +225,8 @@ public class DeepSeekGateway {
             if (!result.isObject()) throw new IllegalStateException("DeepSeek 返回的评测结果不是 JSON 对象");
             auditService.success(audit, completion.content().length(), completion.promptTokens(),
                     completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
-            return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), result);
+            return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), result,
+                    provider.code(), provider.model());
         } catch (IOException exception) {
             IllegalStateException wrapped = new IllegalStateException("DeepSeek 返回的评测结果不是合法 JSON", exception);
             auditService.failure(audit, wrapped, httpStatus);
@@ -301,7 +318,12 @@ public class DeepSeekGateway {
         };
     }
 
-    public record Generated<T>(String requestId, String promptCode, int promptVersion, T content) {}
+    public record Generated<T>(String requestId, String promptCode, int promptVersion, T content,
+                               String providerCode, String model) {
+        public Generated(String requestId, String promptCode, int promptVersion, T content) {
+            this(requestId, promptCode, promptVersion, content, null, null);
+        }
+    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record Request(String model, List<Message> messages,

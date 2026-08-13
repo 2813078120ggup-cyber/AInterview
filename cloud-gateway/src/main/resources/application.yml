@@ -1,0 +1,49 @@
+server:
+  port: ${SERVER_PORT:8082}
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: cloud-gateway
+  cloud:
+    discovery:
+      enabled: ${SPRING_CLOUD_DISCOVERY_ENABLED:true}
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: backend-core-api
+              uri: lb://backend-core
+              predicates:
+                - Path=/api/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: ${EUREKA_INSTANCE_PREFER_IP_ADDRESS:true}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${EUREKA_INSTANCE_ID:${spring.application.name}:${server.port}}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8083}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    gateway:
+      enabled: true
+    health:
+      show-details: never
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

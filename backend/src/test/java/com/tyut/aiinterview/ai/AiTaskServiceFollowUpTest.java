@@ -49,6 +49,7 @@ class AiTaskServiceFollowUpTest {
                 mock(FreeInterviewSessionMapper.class), mock(FreeInterviewTurnMapper.class),
                 deepSeekGateway, mock(PromptTemplateService.class),
                 mock(ChoiceAnswerScorer.class), objectMapper, currentUser,
+                mock(com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService.class),
                 Runnable::run, Runnable::run, 12);
         when(currentUser.id()).thenReturn(7L);
         when(interviewMapper.selectById(11L)).thenReturn(interview());

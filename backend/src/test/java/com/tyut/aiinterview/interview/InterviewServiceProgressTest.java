@@ -22,6 +22,7 @@ import com.tyut.aiinterview.mapper.QuestionBankMapper;
 import com.tyut.aiinterview.mapper.QuestionMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.mapper.UserRoleMapper;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import com.tyut.aiinterview.recording.InterviewRecordingService;
 import java.time.LocalDateTime;
@@ -39,7 +40,8 @@ class InterviewServiceProgressTest {
         InterviewService service = new InterviewService(interviewMapper, taskMapper, questionMapper, answerMapper,
                 mock(QuestionMapper.class), mock(QuestionBankMapper.class), mock(UserMapper.class),
                 mock(UserRoleMapper.class), mock(JobPositionMapper.class), currentUser,
-                mock(AiEvaluationGateway.class), mock(InterviewRecordingService.class), new ObjectMapper(), 15);
+                mock(AiEvaluationGateway.class), mock(InterviewRecordingService.class), new ObjectMapper(), 15,
+                mock(CompanyAccessService.class));
 
         Interview interview = new Interview();
         interview.setId(11L);
@@ -136,7 +138,8 @@ class InterviewServiceProgressTest {
         return new InterviewService(interviewMapper, taskMapper, questionMapper, answerMapper,
                 mock(QuestionMapper.class), mock(QuestionBankMapper.class), mock(UserMapper.class),
                 mock(UserRoleMapper.class), mock(JobPositionMapper.class), currentUser,
-                mock(AiEvaluationGateway.class), recordingService, new ObjectMapper(), 15);
+                mock(AiEvaluationGateway.class), recordingService, new ObjectMapper(), 15,
+                mock(CompanyAccessService.class));
     }
 
     private Interview inProgressInterview() {

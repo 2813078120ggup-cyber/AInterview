@@ -6,15 +6,10 @@ import { AlgorithmPageHeader } from '@/components/algorithm/algorithm-page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { CodeEditor } from '@/components/algorithm/CodeEditor'
+import { LazyCodeEditor } from '@/components/algorithm/LazyCodeEditor'
 import { algorithmApi, type AlgorithmProblemDetail, type AlgorithmRunResponse, type AlgorithmSubmissionDetail, type AlgorithmSubmissionItem } from '@/lib/algorithm-api'
-import { algorithmDifficultyMeta, algorithmStatusLabel, algorithmStatusTone, difficultyLabel } from '@/lib/algorithm-status'
+import { algorithmDifficultyMeta, algorithmStatusLabel, algorithmStatusTone, algorithmTerminalStatuses, difficultyLabel } from '@/lib/algorithm-status'
 import { useTheme } from '@/lib/theme'
-
-const TERMINAL_STATUSES = new Set([
-  'ACCEPTED', 'WRONG_ANSWER', 'COMPILE_ERROR', 'RUNTIME_ERROR',
-  'TIME_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'OUTPUT_LIMIT_EXCEEDED', 'SYSTEM_ERROR',
-])
 
 const sleep = (millis: number) => new Promise(resolve => window.setTimeout(resolve, millis))
 
@@ -26,6 +21,7 @@ export function ProblemDetailPage() {
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submissionTimedOut, setSubmissionTimedOut] = useState(false)
   const [runResult, setRunResult] = useState<AlgorithmRunResponse>()
   const [submission, setSubmission] = useState<AlgorithmSubmissionDetail>()
   const [error, setError] = useState('')
@@ -45,6 +41,7 @@ export function ProblemDetailPage() {
     setError('')
     setRunResult(undefined)
     setSubmission(undefined)
+    setSubmissionTimedOut(false)
     void algorithmApi.problem(id)
       .then(data => {
         if (disposed) return
@@ -95,6 +92,7 @@ export function ProblemDetailPage() {
     setError('')
     setRunResult(undefined)
     setSubmission(undefined)
+    setSubmissionTimedOut(false)
     try {
       setRunResult(await algorithmApi.run({ problemId: id, language: 'JAVA17', sourceCode: code, input }))
     } catch (reason) {
@@ -109,20 +107,30 @@ export function ProblemDetailPage() {
     setError('')
     setRunResult(undefined)
     setSubmission(undefined)
+    setSubmissionTimedOut(false)
     try {
       const submissionId = await algorithmApi.submit({ problemId: id, language: 'JAVA17', sourceCode: code })
       let detail: AlgorithmSubmissionDetail | undefined
+      let reachedTerminal = false
       for (let attempt = 0; attempt < 60; attempt++) {
         await sleep(1500)
         detail = await algorithmApi.submission(submissionId)
         setSubmission(detail)
-        if (TERMINAL_STATUSES.has(detail.status)) break
+        if (algorithmTerminalStatuses.has(detail.status)) {
+          reachedTerminal = true
+          break
+        }
+      }
+      if (!reachedTerminal) {
+        setSubmissionTimedOut(true)
+        setError('判题等待时间较长，请前往提交记录查看最新状态')
       }
       void algorithmApi.problem(id).then(setProblem).catch(() => undefined)
       void algorithmApi.submissions({ problemId: id, page: 1, pageSize: 6 })
         .then(result => setHistory(result.records))
         .catch(() => undefined)
     } catch (reason) {
+      setSubmissionTimedOut(true)
       setError(reason instanceof Error ? reason.message : '提交失败，请稍后重试')
     } finally {
       setSubmitting(false)
@@ -264,7 +272,7 @@ export function ProblemDetailPage() {
               <RefreshCw className="h-4 w-4" />重置代码
             </Button>
           </div>
-          <CodeEditor value={code} onChange={setCode} height={360} dark={dark} />
+          <LazyCodeEditor value={code} onChange={setCode} height={360} dark={dark} />
 
           <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-3 py-2">
             <button
@@ -347,9 +355,11 @@ export function ProblemDetailPage() {
                     </table>
                   </div>
                 )}
-                {submission && !TERMINAL_STATUSES.has(submission.status) && (
+                {submission && !algorithmTerminalStatuses.has(submission.status) && (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />正在判题，请稍候…
+                    {submissionTimedOut
+                      ? '判题仍在后台进行，可在提交记录中查看最新状态。'
+                      : <><Loader2 className="h-3.5 w-3.5 animate-spin" />正在判题，请稍候…</>}
                   </p>
                 )}
               </div>

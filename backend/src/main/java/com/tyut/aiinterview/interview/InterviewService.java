@@ -13,7 +13,6 @@ import com.tyut.aiinterview.domain.AiTask;
 import com.tyut.aiinterview.domain.Interview;
 import com.tyut.aiinterview.domain.InterviewAnswer;
 import com.tyut.aiinterview.domain.InterviewQuestion;
-import com.tyut.aiinterview.domain.JobPosition;
 import com.tyut.aiinterview.domain.Question;
 import com.tyut.aiinterview.domain.QuestionBank;
 import com.tyut.aiinterview.domain.UserAccount;
@@ -27,6 +26,8 @@ import com.tyut.aiinterview.mapper.QuestionMapper;
 import com.tyut.aiinterview.mapper.QuestionBankMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.mapper.UserRoleMapper;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
+import com.tyut.aiinterview.observability.OperationAuditService;
 import com.tyut.aiinterview.security.CurrentUser;
 import com.tyut.aiinterview.recording.InterviewRecordingService;
 import java.math.BigDecimal;
@@ -34,7 +35,9 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,14 +60,18 @@ public class InterviewService {
     private final ObjectMapper objectMapper;
     private final SimulationFollowUpPolicy followUpPolicy;
     private final int startWindowMinutes;
+    private final CompanyAccessService companyAccess;
+    private ApplicationEventPublisher eventPublisher;
+    private OperationAuditService auditService;
 
     public InterviewService(InterviewMapper interviewMapper, AiTaskMapper aiTaskMapper,
                             InterviewQuestionMapper interviewQuestionMapper,
                             InterviewAnswerMapper answerMapper, QuestionMapper questionMapper, QuestionBankMapper questionBankMapper, UserMapper userMapper,
-                            UserRoleMapper userRoleMapper, JobPositionMapper positionMapper,
-                            CurrentUser currentUser, AiEvaluationGateway aiEvaluationGateway,
-                            InterviewRecordingService recordingService, ObjectMapper objectMapper,
-                            @Value("${app.interview.start-window-minutes:15}") int startWindowMinutes) {
+                             UserRoleMapper userRoleMapper, JobPositionMapper positionMapper,
+                             CurrentUser currentUser, AiEvaluationGateway aiEvaluationGateway,
+                             InterviewRecordingService recordingService, ObjectMapper objectMapper,
+                             @Value("${app.interview.start-window-minutes:15}") int startWindowMinutes,
+                             CompanyAccessService companyAccess) {
         this.interviewMapper = interviewMapper;
         this.aiTaskMapper = aiTaskMapper;
         this.interviewQuestionMapper = interviewQuestionMapper;
@@ -80,11 +87,27 @@ public class InterviewService {
         this.objectMapper = objectMapper;
         this.followUpPolicy = new SimulationFollowUpPolicy(objectMapper);
         this.startWindowMinutes = startWindowMinutes;
+        this.companyAccess = companyAccess;
     }
 
     @Transactional
     public Interview create(InterviewDtos.CreateRequest request) {
         requireManager();
+        return createScheduled(request);
+    }
+
+    @Transactional
+    public Interview createRecruitment(Long positionId, Long candidateId, InterviewDtos.CreateRequest request) {
+        companyAccess.requirePermission("interview:create");
+        companyAccess.requirePosition(positionId);
+        if (!positionId.equals(request.positionId()) || !candidateId.equals(request.candidateId())) {
+            throw BusinessException.badRequest("AI 面试关联对象与当前申请不一致");
+        }
+        ensurePublicQuestionBank(request.questionBankId());
+        return createScheduled(request);
+    }
+
+    private Interview createScheduled(InterviewDtos.CreateRequest request) {
         validateType(request.type());
         String interviewerStyle = normalizeInterviewerStyle(request.interviewerStyle());
         ensureActiveCandidate(request.candidateId());
@@ -117,6 +140,23 @@ public class InterviewService {
             interviewQuestionMapper.insert(selected);
         }
         return interview;
+    }
+
+    private void ensurePublicQuestionBank(Long questionBankId) {
+        QuestionBank bank = questionBankMapper.selectById(questionBankId);
+        if (bank == null || bank.getStatus() != 1 || bank.getVisibility() == null || bank.getVisibility() != 2) {
+            throw BusinessException.badRequest("企业只能使用已发布的公开题库");
+        }
+    }
+
+    @Autowired
+    public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Autowired
+    public void setAuditService(OperationAuditService auditService) {
+        this.auditService = auditService;
     }
 
     public List<InterviewDtos.PracticeBankView> practiceBanks() {
@@ -262,6 +302,13 @@ public class InterviewService {
                 .eq(Interview::getStatus, Interview.PENDING)) == 0) {
             throw BusinessException.badRequest("面试状态已变更，请刷新后重试");
         }
+        if (auditService != null) auditService.success("INTERVIEW", "INTERVIEW_CANCELLED", "INTERVIEW", id, null,
+                "取消 AI 面试");
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new InterviewLifecycleEvent(id, InterviewLifecycleEvent.Phase.STARTED, currentUser.id()));
+        }
+        if (auditService != null) auditService.success("INTERVIEW", "INTERVIEW_STARTED", "INTERVIEW", id, null,
+                "开始 AI 面试");
         return interview;
     }
 
@@ -278,6 +325,11 @@ public class InterviewService {
         }
         recordingService.completeForInterview(id);
         AiTask task = aiEvaluationGateway.enqueue(interview);
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new InterviewLifecycleEvent(id, InterviewLifecycleEvent.Phase.ENDED, currentUser.id()));
+        }
+        if (auditService != null) auditService.success("INTERVIEW", "INTERVIEW_ENDED", "INTERVIEW", id, null,
+                "结束 AI 面试并排队生成报告");
         return new InterviewDtos.EndResponse(interview, task.getId(), task.getStatus());
     }
 
@@ -543,6 +595,10 @@ public class InterviewService {
 
     private void requireParticipant(Interview interview) {
         Long userId = currentUser.id();
+        if (currentUser.hasCompanyRole()) {
+            companyAccess.requireAuthorizedInterview(interview.getId());
+            return;
+        }
         if (!(userId.equals(interview.getCandidateId()) || userId.equals(interview.getInterviewerId()) || isManager())) {
             throw BusinessException.forbidden("无权查看该面试");
         }

@@ -26,7 +26,12 @@ public class SecurityConfig {
         return http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(configurer -> configurer.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // The management port is never host-published; Prometheus is reachable only on the private Docker network.
-                .authorizeHttpRequests(auth -> auth.requestMatchers("/v1/auth/**", "/actuator/health", "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .exceptionHandling(exception -> exception.authenticationEntryPoint((request, response, authException) -> response.sendError(401)))
+                .authorizeHttpRequests(auth -> auth.requestMatchers("/v1/auth/register", "/v1/auth/register/code",
+                                "/v1/auth/login", "/v1/auth/login/**", "/v1/auth/refresh",
+                                "/v1/auth/password/reset", "/v1/auth/password/reset/code",
+                                "/actuator/health", "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/v1/auth/me").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

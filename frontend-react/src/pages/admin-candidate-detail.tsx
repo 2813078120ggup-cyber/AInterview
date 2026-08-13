@@ -20,12 +20,12 @@ export function AdminCandidateDetail() {
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
   const [reports, setReports] = useState<ReportItem[]>([])
   const [error, setError] = useState('')
-  useEffect(() => { void Promise.all([request<Page<User>>('/v1/users?pageNo=1&pageSize=300'), request<InterviewRow[]>('/v1/interviews'), request<Page<ReportItem>>('/v1/reports/page?pageNo=1&pageSize=300')]).then(([users, allInterviews, allReports]) => { setUser(users.records.find(item => String(item.id) === id)); setInterviews(allInterviews.filter(item => String(item.candidateId) === id)); setReports(allReports.records.filter(item => allInterviews.some(interview => String(interview.candidateId) === id && String(interview.id) === String(item.interviewId)))) }).catch(reason => setError(reason instanceof Error ? reason.message : '候选人详情加载失败，请稍后重试。')) }, [id])
+  useEffect(() => { void Promise.all([request<User>(`/v1/users/${id}`), request<InterviewRow[]>('/v1/interviews'), request<Page<ReportItem>>('/v1/reports/page?pageNo=1&pageSize=300')]).then(([candidate, allInterviews, allReports]) => { setUser(candidate); setInterviews(allInterviews.filter(item => String(item.candidateId) === id)); setReports(allReports.records.filter(item => allInterviews.some(interview => String(interview.candidateId) === id && String(interview.id) === String(item.interviewId)))) }).catch(reason => setError(reason instanceof Error ? reason.message : '候选人详情加载失败，请稍后重试。')) }, [id])
   const latest = reports[0]
   const points = useMemo(() => reports.slice().reverse().map((item, index) => ({ x: 40 + index * (reports.length > 1 ? 520 / (reports.length - 1) : 0), y: 170 - item.totalScore * 1.35, score: item.totalScore })), [reports])
   if (error) return <Card>{error}</Card>
   if (!user) return <Card>正在加载候选人详情…</Card>
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <Button type="button" variant="ghost" className="mb-5 -ml-3 h-9 px-3 text-sm text-muted-foreground hover:text-foreground" onClick={() => navigate('/admin/candidates')}><ArrowLeft className="h-4 w-4" />返回候选人列表</Button>
     <section className="soft-emphasis-panel overflow-hidden rounded-[24px] p-5 sm:rounded-[30px] sm:p-8"><p className="text-sm font-semibold text-white/55">候选人档案</p><h1 className="mt-2 break-words text-3xl font-bold sm:text-4xl">{user.realName}</h1><p className="mt-2 break-words text-sm leading-6 text-white/60 sm:text-base">@{user.username} · {user.phone || '未填写手机号'} · {user.email || '未填写邮箱'}</p><div className="mt-5"><Badge tone={user.status === 1 ? 'success' : 'warning'}>{user.status === 1 ? '正常' : '停用'}</Badge></div></section>
     <div className="mt-6 grid gap-4 md:grid-cols-2">

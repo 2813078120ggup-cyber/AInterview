@@ -6,9 +6,7 @@ import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
-import { recordAuditLog } from '@/lib/audit-log'
 import { request } from '@/lib/api'
-import { profile } from '@/lib/session'
 
 type Bank = {
   id: string
@@ -204,13 +202,6 @@ export function AdminQuestionBanks() {
     setSaving(true)
     try {
       const bank = await request<Bank>('/v1/question-banks', { method: 'POST', body: JSON.stringify(form) })
-      recordAuditLog({
-        module: '题库管理',
-        action: '创建题库',
-        operator: profile()?.realName ?? '管理员',
-        target: bank.name,
-        detail: `创建题库 ${bank.bankCode}，可见范围：${visibilityText(bank.visibility)}，状态：${bank.status === 1 ? '启用' : '停用'}`,
-      })
       setItems(previous => [bank, ...previous])
       setDialog(false)
       setForm({ bankCode: '', name: '', description: '', visibility: 2, status: 1 })
@@ -229,24 +220,6 @@ export function AdminQuestionBanks() {
         body: JSON.stringify(toBankPayload(item, patch)),
       })
       setItems(previous => previous.map(current => current.id === item.id ? next : current))
-      if (patch.status !== undefined) {
-        recordAuditLog({
-          module: '题库管理',
-          action: patch.status === 1 ? '启用题库' : '停用题库',
-          operator: profile()?.realName ?? '管理员',
-          target: item.name,
-          detail: `${patch.status === 1 ? '启用' : '停用'}题库 ${item.bankCode}`,
-        })
-      }
-      if (patch.visibility !== undefined) {
-        recordAuditLog({
-          module: '题库管理',
-          action: '调整可见范围',
-          operator: profile()?.realName ?? '管理员',
-          target: item.name,
-          detail: `将题库 ${item.bankCode} 调整为「${visibilityText(patch.visibility)}」`,
-        })
-      }
       setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '题库设置更新失败，请稍后重试。')
@@ -261,13 +234,6 @@ export function AdminQuestionBanks() {
       await request(`/v1/question-banks/${item.id}`, { method: 'DELETE' })
       setItems(previous => previous.filter(current => current.id !== item.id))
       if (bankId === item.id) setBankId('')
-      recordAuditLog({
-        module: '题库管理',
-        action: '删除题库',
-        operator: profile()?.realName ?? '管理员',
-        target: item.name,
-        detail: `删除题库 ${item.bankCode}`,
-      })
       setError('')
       setDeleteTarget(undefined)
     } catch (reason) {
@@ -307,14 +273,6 @@ export function AdminQuestionBanks() {
       for (const [index, question] of preview.entries()) {
         await request(`/v1/question-banks/${bankId}/questions`, { method: 'POST', body: JSON.stringify({ ...question, sortOrder: index }) })
       }
-      const bank = items.find(item => item.id === bankId)
-      recordAuditLog({
-        module: '题库管理',
-        action: '批量导入题目',
-        operator: profile()?.realName ?? '管理员',
-        target: bank?.name ?? bankId,
-        detail: `从 ${fileName || '表格文件'} 导入 ${preview.length} 道题`,
-      })
       setImportOpen(false)
       setPreview([])
       setFileName('')
@@ -326,7 +284,7 @@ export function AdminQuestionBanks() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
         <p className="text-sm font-semibold text-[var(--accent)]">题库配置</p>

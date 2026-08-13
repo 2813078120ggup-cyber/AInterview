@@ -47,6 +47,7 @@ public final class AiProviderDtos {
     public record ProviderTestResult(
             boolean success,
             Integer statusCode,
+            String state,
             long latencyMs,
             String message
     ) {

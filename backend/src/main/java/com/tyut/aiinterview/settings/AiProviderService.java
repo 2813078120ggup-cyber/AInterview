@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.domain.AiProviderConfig;
 import com.tyut.aiinterview.mapper.AiProviderConfigMapper;
+import com.tyut.aiinterview.observability.OperationAuditService;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -16,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,16 +31,26 @@ public class AiProviderService {
     private final CurrentUser currentUser;
     private final ObjectMapper objectMapper;
     private final String openTalkingUpstream;
+    private final OperationAuditService auditService;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
     public AiProviderService(AiProviderConfigMapper mapper, ConfigSecretCodec secretCodec, CurrentUser currentUser,
                              ObjectMapper objectMapper,
                              @Value("${app.opentalking.upstream:${OPENTALKING_UPSTREAM:}}") String openTalkingUpstream) {
+        this(mapper, secretCodec, currentUser, objectMapper, openTalkingUpstream, null);
+    }
+
+    @Autowired
+    public AiProviderService(AiProviderConfigMapper mapper, ConfigSecretCodec secretCodec, CurrentUser currentUser,
+                             ObjectMapper objectMapper,
+                             @Value("${app.opentalking.upstream:${OPENTALKING_UPSTREAM:}}") String openTalkingUpstream,
+                             OperationAuditService auditService) {
         this.mapper = mapper;
         this.secretCodec = secretCodec;
         this.currentUser = currentUser;
         this.objectMapper = objectMapper;
         this.openTalkingUpstream = trim(openTalkingUpstream);
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -105,6 +118,7 @@ public class AiProviderService {
         config.setUpdatedAt(LocalDateTime.now());
         mapper.insert(config);
         normalizeDefaults(config);
+        audit("AI_PROVIDER_CREATED", config.getId(), "创建 Provider 配置 " + config.getCode());
         return toView(mapper.selectById(config.getId()));
     }
 
@@ -121,6 +135,7 @@ public class AiProviderService {
         config.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(config);
         normalizeDefaults(config);
+        audit("AI_PROVIDER_UPDATED", config.getId(), "更新 Provider 配置 " + config.getCode());
         return toView(mapper.selectById(id));
     }
 
@@ -131,11 +146,18 @@ public class AiProviderService {
         if (truthy(config.getTextDefault())) throw BusinessException.badRequest("当前是文字默认 Provider，请先切换默认项后再删除");
         if (truthy(config.getVoiceDefault())) throw BusinessException.badRequest("当前是语音默认 Provider，请先切换默认项后再删除");
         mapper.deleteById(id);
+        audit("AI_PROVIDER_DELETED", id, "删除 Provider 配置 " + config.getCode());
     }
 
     public AiProviderDtos.ProviderTestResult test(Long id) {
         requireAdmin();
         AiProviderConfig config = require(id);
+        AiProviderDtos.ProviderTestResult result = probe(config);
+        audit("AI_PROVIDER_TEST", config.getId(), "Provider 测试完成，状态 " + result.state());
+        return result;
+    }
+
+    private AiProviderDtos.ProviderTestResult probe(AiProviderConfig config) {
         long started = System.nanoTime();
         if (!truthy(config.getEnabled())) {
             return result(false, null, started, "Provider 已停用，请先启用后再测试");
@@ -147,7 +169,12 @@ public class AiProviderService {
         if (baseUrl.isBlank() || baseUrl.contains("待配置")) {
             return result(false, null, started, "Base URL 尚未配置");
         }
-        String apiKey = secretCodec.decrypt(config.getApiKeyCipher());
+        final String apiKey;
+        try {
+            apiKey = secretCodec.decrypt(config.getApiKeyCipher());
+        } catch (Exception exception) {
+            return result(false, null, started, "FAILED", "Provider 密钥配置不可用，请重新保存配置");
+        }
         if ("virtual-human".equals(config.getKind()) && "open-talking-virtual-human".equals(config.getCode())) {
             if (trim(config.getChatModel()).isBlank() || trim(config.getChatModel()).contains("待配置")
                     || trim(config.getAvatarModel()).isBlank() || trim(config.getAvatarModel()).contains("待配置")) {
@@ -160,15 +187,19 @@ public class AiProviderService {
                 boolean success = response.statusCode() >= 200 && response.statusCode() < 300;
                 return result(success, response.statusCode(), started,
                         success ? "OpenTalking 服务可用，浏览器会使用 WebRTC 连接数字人会话" : "OpenTalking /health 返回 HTTP " + response.statusCode());
+            } catch (HttpTimeoutException exception) {
+                return result(false, null, started, "TIMEOUT", "OpenTalking 连通性测试超时");
             } catch (Exception exception) {
-                return result(false, null, started, "OpenTalking 连通性测试失败：" + shortMessage(exception));
+                return result(false, null, started, "FAILED", "OpenTalking 连通性测试失败，请检查服务状态");
             }
         }
         try {
             if ("llm".equals(config.getKind())) return testLlm(config, baseUrl, apiKey, started);
             return testEndpoint(baseUrl, apiKey, started);
+        } catch (HttpTimeoutException exception) {
+            return result(false, null, started, "TIMEOUT", "Provider 连通性测试超时");
         } catch (Exception exception) {
-            return result(false, null, started, "连通性测试失败：" + shortMessage(exception));
+            return result(false, null, started, "FAILED", "Provider 连通性测试失败，请检查服务状态");
         }
     }
 
@@ -330,11 +361,21 @@ public class AiProviderService {
     }
 
     private AiProviderDtos.ProviderTestResult result(boolean success, Integer statusCode, long started, String message) {
-        return new AiProviderDtos.ProviderTestResult(success, statusCode, Math.max(1, (System.nanoTime() - started) / 1_000_000), message);
+        return result(success, statusCode, started, success ? "SUCCESS" : "FAILED", message);
+    }
+
+    private AiProviderDtos.ProviderTestResult result(boolean success, Integer statusCode, long started,
+                                                     String state, String message) {
+        return new AiProviderDtos.ProviderTestResult(success, statusCode, state,
+                Math.max(1, (System.nanoTime() - started) / 1_000_000), message);
     }
 
     private void requireAdmin() {
         if (!currentUser.hasRole("ADMIN")) throw BusinessException.forbidden("仅管理员可管理系统配置");
+    }
+
+    private void audit(String action, Long providerId, String summary) {
+        if (auditService != null) auditService.success("AI_PROVIDER", action, "AI_PROVIDER", providerId, null, summary);
     }
 
     private boolean truthy(Integer value) {

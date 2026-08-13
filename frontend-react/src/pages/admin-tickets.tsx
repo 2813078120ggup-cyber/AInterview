@@ -40,7 +40,7 @@ export function AdminTickets() {
   useEffect(() => { load() }, [status, type, assigneeId])
 
   const assigneeOptions = [{ value: '', label: '全部处理人' }, { value: 'me', label: '我负责' }, { value: 'unassigned', label: '未分配' }, ...assignees.map(item => ({ value: item.id, label: item.realName || item.username }))]
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
         <p className="text-sm font-semibold text-[var(--accent)]">服务与支持</p>

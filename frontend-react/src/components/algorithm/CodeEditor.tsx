@@ -5,7 +5,7 @@ import editorWorker from '../../../node_modules/monaco-editor/esm/vs/editor/edit
 self.MonacoEnvironment = { getWorker: () => new editorWorker() }
 loader.config({ monaco })
 
-type CodeEditorProps = {
+export type CodeEditorProps = {
   value: string
   onChange: (value: string) => void
   height?: number | string

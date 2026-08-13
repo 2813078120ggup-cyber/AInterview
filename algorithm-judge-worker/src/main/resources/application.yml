@@ -1,0 +1,79 @@
+server:
+  port: ${SERVER_PORT:8084}
+  forward-headers-strategy: framework
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:algorithm-judge-worker}
+  cloud:
+    discovery:
+      enabled: ${SPRING_CLOUD_DISCOVERY_ENABLED:false}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/ai_interview?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:false}
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:false}
+  instance:
+    prefer-ip-address: ${EUREKA_INSTANCE_PREFER_IP_ADDRESS:true}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    # Allow multiple Compose replicas to register as distinct Eureka instances.
+    instance-id: ${EUREKA_INSTANCE_ID:${spring.application.name}:${server.port}:${random.uuid}}
+    metadata-map:
+      management.port: ${MANAGEMENT_PORT:8085}
+
+app:
+  algorithm:
+    judge:
+      enabled: ${ALGORITHM_JUDGE_ENABLED:true}
+      consumer-enabled: ${ALGORITHM_JUDGE_CONSUMER_ENABLED:true}
+      consumer-name: ${ALGORITHM_JUDGE_CONSUMER_NAME:${HOSTNAME:judge-consumer-1}}
+      runner-image: ${ALGORITHM_JUDGE_RUNNER_IMAGE:algorithm-runner-java17:latest}
+      docker-host: ${ALGORITHM_JUDGE_DOCKER_HOST:}
+      output-limit-bytes: ${ALGORITHM_JUDGE_OUTPUT_LIMIT_BYTES:8388608}
+      source-limit-chars: ${ALGORITHM_JUDGE_SOURCE_LIMIT_CHARS:100000}
+      max-test-cases: ${ALGORITHM_JUDGE_MAX_TEST_CASES:50}
+      compile-timeout-seconds: ${ALGORITHM_JUDGE_COMPILE_TIMEOUT_SECONDS:30}
+      cpu-count: ${ALGORITHM_JUDGE_CPU_COUNT:1}
+      internal-token: ${ALGORITHM_JUDGE_INTERNAL_TOKEN:}
+      internal-token-file: ${ALGORITHM_JUDGE_INTERNAL_TOKEN_FILE:/run/secrets/algorithm-judge-internal-token}
+      require-internal-token: ${ALGORITHM_JUDGE_REQUIRE_INTERNAL_TOKEN:false}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8085}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

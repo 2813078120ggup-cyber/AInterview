@@ -13,6 +13,8 @@ frontend/
 frontend-react/node_modules/
 frontend-react/dist/
 frontend-react/.env
+frontend-react/playwright-report/
+frontend-react/test-results/
 *.tsbuildinfo
 
 # Gradle

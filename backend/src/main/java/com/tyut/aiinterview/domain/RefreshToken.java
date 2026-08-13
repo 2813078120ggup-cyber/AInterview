@@ -9,9 +9,12 @@ import lombok.Data;
 public class RefreshToken {
     private Long id;
     private Long userId;
+    private String sessionId;
     private String tokenHash;
     private LocalDateTime expiresAt;
     private LocalDateTime revokedAt;
+    private LocalDateTime lastUsedAt;
+    private String revokedReason;
     private String clientIp;
     private String userAgent;
     private LocalDateTime createdAt;

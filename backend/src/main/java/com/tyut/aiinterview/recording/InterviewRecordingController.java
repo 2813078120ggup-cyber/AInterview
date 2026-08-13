@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -63,9 +64,11 @@ public class InterviewRecordingController {
     public ResponseEntity<Resource> content(@PathVariable Long interviewId, @PathVariable Long segmentId) throws IOException {
         RecordingDtos.RecordingContent content = service.content(interviewId, segmentId);
         return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .contentType(MediaType.parseMediaType(content.contentType()))
                 .contentLength(content.sizeBytes())
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.inline().filename(content.filename()).build().toString())
                 .body(content.resource());

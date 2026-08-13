@@ -16,11 +16,22 @@ public class UserAccount {
     private String email;
     private String phone;
     private String avatarUrl;
+    private Long avatarMediaId;
+    private LocalDateTime emailVerifiedAt;
+    private LocalDateTime phoneVerifiedAt;
+    private Long companyId;
     private Integer status;
+    private Integer securityVersion;
+    // Reserved for future compare-and-set account updates; not a MyBatis-Plus @Version field yet.
+    private Integer version;
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     // The schema stores a soft-delete timestamp: active rows have NULL here.
     @TableLogic(value = "null", delval = "now()")
     private LocalDateTime deletedAt;
+
+    public void incrementSecurityVersion() {
+        securityVersion = securityVersion == null ? 1 : securityVersion + 1;
+    }
 }

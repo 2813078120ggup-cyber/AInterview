@@ -12,6 +12,11 @@ export const algorithmStatusMeta: Record<string, { label: string; tone: 'default
   SYSTEM_ERROR: { label: '判题系统异常', tone: 'danger' },
 }
 
+export const algorithmTerminalStatuses = new Set([
+  'ACCEPTED', 'WRONG_ANSWER', 'COMPILE_ERROR', 'RUNTIME_ERROR',
+  'TIME_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'OUTPUT_LIMIT_EXCEEDED', 'SYSTEM_ERROR',
+])
+
 export function algorithmStatusLabel(status?: string) {
   return (status && algorithmStatusMeta[status]?.label) || status || '未知'
 }

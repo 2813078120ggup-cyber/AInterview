@@ -9,9 +9,11 @@ ${resumeText}
   "candidateProfile":"不超过100字的候选人画像",
   "targetRoles":["最多2个适合岗位"],
   "skills":["最多8个技能或领域"],
-  "experienceHighlights":["最多3条经历亮点"],
+  "workExperience":["最多6条工作经历事实，每条不超过60字"],
   "projects":[{"name":"项目名或经历","role":"职责","evidence":"不超过50字的可追问事实"}],
-  "interviewFocus":["最多4个最值得追问的方向"],
-  "riskPoints":["最多2个需要核实或存在表述缺口的点"],
+  "education":["最多4条教育经历事实"],
+  "strengths":["最多4条有简历事实支持的优势"],
+  "risks":["最多4个需要核实或存在表述缺口的点"],
+  "followUpDirections":["最多6个最值得追问的方向"],
   "openingQuestion":"只包含一个、适合作为第1轮的具体中文面试问题"
 }

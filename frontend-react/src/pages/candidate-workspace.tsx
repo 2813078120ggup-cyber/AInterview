@@ -19,7 +19,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -33,6 +33,7 @@ import {
   isReportPending,
 } from '@/lib/interview-status'
 import { isPracticeInterview } from '@/lib/interviewer-styles'
+import { applicationStatusMeta, type JobApplication, type PageResult, type Resume } from '@/lib/recruitment'
 
 type Trend = {
   interviewId: string
@@ -147,7 +148,7 @@ function compareActionPriority(left: Interview, right: Interview) {
 }
 
 function WorkspaceSkeleton() {
-  return <div className="space-y-6" aria-label="正在加载候选人工作台">
+  return <div className="space-y-6" role="status" aria-busy="true" aria-label="正在加载候选人工作台">
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(310px,.75fr)]">
       <div className="h-72 animate-pulse rounded-[28px] bg-muted" />
       <div className="h-72 animate-pulse rounded-[28px] bg-muted" />
@@ -155,11 +156,35 @@ function WorkspaceSkeleton() {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-32 animate-pulse rounded-[24px] bg-muted" />)}
     </div>
+    <div className="h-52 animate-pulse rounded-[24px] bg-muted" />
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(330px,.65fr)]">
       <div className="h-80 animate-pulse rounded-[24px] bg-muted" />
       <div className="h-80 animate-pulse rounded-[24px] bg-muted" />
     </div>
   </div>
+}
+
+function RecruitmentReadinessCard({ applications, resumes }: { applications?: PageResult<JobApplication>; resumes?: Resume[] }) {
+  const readyResumes = resumes?.filter(item => item.parseStatus === 'SUCCESS' || item.parseStatus === 'MANUAL').length
+  const latestApplication = applications?.records[0]
+  const latestStatus = latestApplication ? applicationStatusMeta[latestApplication.status] : undefined
+
+  return <Card className="min-w-0">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p className="text-sm font-semibold text-[var(--accent)]">招聘准备</p>
+        <h2 className="mt-1 text-xl font-bold">从岗位到面试</h2>
+      </div>
+      <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]"><FileChartColumn className="h-5 w-5" aria-hidden="true" /></span>
+    </div>
+    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">保持一份可投递简历，及时跟进申请状态，再进入定向面试流程。</p>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-2xl bg-background p-4"><p className="text-xs text-muted-foreground">可投递简历</p><p className="mt-2 text-2xl font-black">{readyResumes ?? '--'}<span className="ml-1 text-xs font-normal text-muted-foreground">份</span></p><p className="mt-1 text-xs text-muted-foreground">{resumes ? `共 ${resumes.length} 份资料` : '状态暂不可用'}</p></div>
+      <div className="rounded-2xl bg-background p-4"><p className="text-xs text-muted-foreground">岗位申请</p><p className="mt-2 text-2xl font-black">{applications?.total ?? '--'}<span className="ml-1 text-xs font-normal text-muted-foreground">份</span></p><p className="mt-1 truncate text-xs text-muted-foreground" title={latestApplication?.positionName}>{latestApplication ? `最近：${latestApplication.positionName}` : applications ? '还没有投递记录' : '状态暂不可用'}</p></div>
+    </div>
+    {latestApplication && latestStatus && <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3"><span className="min-w-0 truncate text-sm">最近申请：{latestApplication.positionName}</span><Badge tone={latestStatus.tone}>{latestStatus.label}</Badge></div>}
+    <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4"><Link to="/resumes" className="inline-flex min-h-10 items-center justify-center rounded-full border border-border px-3 text-sm font-semibold transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">管理简历</Link><Link to={applications?.total ? '/applications' : '/jobs'} className="inline-flex min-h-10 items-center justify-center rounded-full bg-[var(--primary)] px-3 text-sm font-semibold text-[var(--primary-foreground)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">{applications?.total ? '查看申请' : '浏览岗位'}</Link></div>
+  </Card>
 }
 
 function OverviewTrendChart({ trends, onStart }: { trends: Trend[]; onStart: () => void }) {
@@ -266,6 +291,8 @@ export function CandidateWorkspaceOverview() {
   const [interviews, setInterviews] = useState<Interview[]>([])
   const [banks, setBanks] = useState<PracticeBank[]>([])
   const [summary, setSummary] = useState<Summary>()
+  const [applications, setApplications] = useState<PageResult<JobApplication>>()
+  const [resumes, setResumes] = useState<Resume[]>()
   const [loading, setLoading] = useState(true)
   const [loadVersion, setLoadVersion] = useState(0)
   const [busyAction, setBusyAction] = useState('')
@@ -278,17 +305,23 @@ export function CandidateWorkspaceOverview() {
       request<Interview[]>('/v1/interviews'),
       request<PracticeBank[]>('/v1/interviews/practice/banks'),
       request<Summary>('/v1/reports/my/summary'),
+      request<PageResult<JobApplication>>('/v1/recruitment/applications?pageNo=1&pageSize=1'),
+      request<Resume[]>('/v1/recruitment/resumes'),
     ]).then(results => {
       if (cancelled) return
-      const [interviewResult, bankResult, summaryResult] = results
+      const [interviewResult, bankResult, summaryResult, applicationResult, resumeResult] = results
       if (interviewResult.status === 'fulfilled') setInterviews(interviewResult.value)
       if (bankResult.status === 'fulfilled') setBanks(bankResult.value)
       if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value)
+      if (applicationResult.status === 'fulfilled') setApplications(applicationResult.value)
+      if (resumeResult.status === 'fulfilled') setResumes(resumeResult.value)
 
       const unavailable = [
         interviewResult.status === 'rejected' ? '面试安排' : '',
         bankResult.status === 'rejected' ? '练习题库' : '',
         summaryResult.status === 'rejected' ? '能力报告' : '',
+        applicationResult.status === 'rejected' ? '申请记录' : '',
+        resumeResult.status === 'rejected' ? '简历资料' : '',
       ].filter(Boolean)
       setError(unavailable.length ? `${unavailable.join('、')}暂时无法加载，其他可用内容已保留。` : '')
     }).finally(() => {
@@ -316,7 +349,7 @@ export function CandidateWorkspaceOverview() {
     : undefined
   const focusScore = focus && summary?.latest ? scoreValue(summary.latest[focus.key]) : 0
   const focusChange = focus && summary?.previous ? summary.changeFromPrevious?.[focus.key] : undefined
-  const hasInitialData = Boolean(interviews.length || banks.length || summary)
+  const hasInitialData = Boolean(interviews.length || banks.length || summary || applications || resumes)
 
   const stats: StatItem[] = [
     {
@@ -408,9 +441,9 @@ export function CandidateWorkspaceOverview() {
   return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="text-sm font-semibold text-[var(--accent)]">候选人工作台</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">智答千面，志达万里</h1>
-        <p className="mt-3 max-w-2xl text-muted-foreground">集中查看待办安排、训练重点与能力变化。</p>
+        <p className="text-sm font-semibold text-[var(--accent)]">个人总览</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">面试准备工作台</h1>
+        <p className="mt-3 max-w-2xl text-muted-foreground">查看当前面试任务、评测结果和下一步训练安排。</p>
       </div>
       <Button onClick={() => navigate('/candidate/interviews')}>
         进入面试大厅 <ArrowRight className="h-4 w-4" />
@@ -481,8 +514,8 @@ export function CandidateWorkspaceOverview() {
         <Card className="flex min-h-72 flex-col">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-[var(--accent)]">训练重点</p>
-              <h2 className="mt-1 text-xl font-bold">本次优先提升</h2>
+              <p className="text-sm font-semibold text-[var(--accent)]">训练计划</p>
+              <h2 className="mt-1 text-xl font-bold">当前提升重点</h2>
             </div>
             <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
               <Target className="h-5 w-5" />
@@ -492,7 +525,7 @@ export function CandidateWorkspaceOverview() {
           {focus && summary?.latest ? <>
             <div className="mt-7 flex items-end justify-between gap-3">
               <div>
-                <p className="text-sm text-muted-foreground">建议关注</p>
+                <p className="text-sm text-muted-foreground">重点方向</p>
                 <h3 className="mt-1 text-2xl font-bold">{focus.label}</h3>
               </div>
               <strong className="text-3xl">{Math.round(focusScore)}</strong>
@@ -511,8 +544,8 @@ export function CandidateWorkspaceOverview() {
             </div>
           </> : <div className="mt-7 flex flex-1 flex-col justify-center rounded-2xl border border-dashed border-border bg-background/55 p-5 text-center">
             <CircleGauge className="mx-auto h-7 w-7 text-[var(--accent)]" />
-            <h3 className="mt-4 font-semibold">完成评测后生成训练重点</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">系统会从专业、表达、逻辑和应变四个维度给出建议。</p>
+            <h3 className="mt-4 font-semibold">完成评测后查看训练计划</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">评测结果会按专业、表达、逻辑和应变四个维度整理训练方向。</p>
             <Button variant="secondary" className="mx-auto mt-5 h-10" onClick={() => navigate('/library')}>选择专项练习</Button>
           </div>}
         </Card>
@@ -535,6 +568,8 @@ export function CandidateWorkspaceOverview() {
           </Card>
         })}
       </section>
+
+      <RecruitmentReadinessCard applications={applications} resumes={resumes} />
 
       <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(330px,.65fr)]">
         <Card className="min-w-0">

@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
 import { request } from '@/lib/api'
-import { recordAuditLog } from '@/lib/audit-log'
-import { profile } from '@/lib/session'
 
 type ProviderKind = 'llm' | 'virtual-human' | 'speech' | 'asr' | 'tts'
 type Provider = {
@@ -170,15 +168,6 @@ export function AdminSettings() {
     }
   }
 
-  function audit(action: string, target: string) {
-    recordAuditLog({
-      module: '系统设置',
-      action,
-      operator: profile()?.realName ?? '管理员',
-      target,
-      detail: `配置项 ${target} 已更新。`,
-    })
-  }
 
   async function submit() {
     if (!editing || saving) return
@@ -192,7 +181,6 @@ export function AdminSettings() {
       const path = existed ? `/v1/admin/ai-providers/${editing.id}` : '/v1/admin/ai-providers'
       const saved = await request<Provider>(path, { method: existed ? 'PUT' : 'POST', body: JSON.stringify(editing) })
       setItems(previous => existed ? previous.map(item => item.id === editing.id ? { ...saved, id: String(saved.id) } : item) : [{ ...saved, id: String(saved.id) }, ...previous])
-      audit(existed ? '编辑配置' : '新增配置', editing.name)
       setEditing(null)
       setMessage(existed ? '服务配置已保存。' : '服务配置已新增。')
       void refresh()
@@ -203,13 +191,12 @@ export function AdminSettings() {
     }
   }
 
-  async function updateProvider(item: Provider, patch: Partial<Provider>, action: string) {
+  async function updateProvider(item: Provider, patch: Partial<Provider>) {
     setUpdatingId(item.id)
     try {
       const next = { ...item, ...patch }
       const saved = await request<Provider>(`/v1/admin/ai-providers/${item.id}`, { method: 'PUT', body: JSON.stringify(next) })
       setItems(previous => previous.map(current => current.id === item.id ? { ...saved, id: String(saved.id) } : current))
-      audit(action, item.name)
       setMessage(`${item.name} 已更新。`)
       void refresh()
     } catch (error) {
@@ -224,7 +211,6 @@ export function AdminSettings() {
     try {
       await request(`/v1/admin/ai-providers/${item.id}`, { method: 'DELETE' })
       setItems(previous => previous.filter(current => current.id !== item.id))
-      audit('删除配置', item.name)
       setMessage(`${item.name} 已删除。`)
       setDeleteTarget(undefined)
     } catch (error) {
@@ -240,7 +226,6 @@ export function AdminSettings() {
       const result = await request<ProviderTestResult>(`/v1/admin/ai-providers/${item.id}/test`, { method: 'POST' })
       const statusText = result.statusCode ? `HTTP ${result.statusCode} · ` : ''
       setMessage(`${item.name}：${result.success ? '测试通过' : '测试未通过'}，${statusText}${result.latencyMs}ms。${result.message}`)
-      audit('测试配置', item.name)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '连通性测试失败，请检查服务地址与密钥。')
     } finally {
@@ -248,7 +233,7 @@ export function AdminSettings() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div className="flex items-start gap-4">
         <span className="grid h-14 w-14 place-items-center rounded-[22px] bg-[linear-gradient(135deg,var(--brand),var(--brand-pink))] text-white shadow-[0_18px_42px_rgba(109,93,252,.25)]">
@@ -332,19 +317,19 @@ export function AdminSettings() {
                     className="h-10 min-w-0 px-3 sm:px-4"
                     disabled={updating || deleting}
                     aria-busy={updating}
-                    onClick={() => void updateProvider(item, { enabled: !item.enabled }, item.enabled ? '停用配置' : '启用配置')}
+                    onClick={() => void updateProvider(item, { enabled: !item.enabled })}
                   >{updating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{item.enabled ? '停用' : '启用'}</Button>
                   {canBeTextDefault(item) && <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 sm:px-4"
                     disabled={!item.enabled || item.textDefault || updating || deleting}
-                    onClick={() => void updateProvider(item, { textDefault: true }, '设置文字默认模型')}
+                    onClick={() => void updateProvider(item, { textDefault: true })}
                   ><Database className="h-4 w-4" />{item.textDefault ? '文字默认' : '设为文字'}</Button>}
                   {canBeVoiceDefault(item) && <Button
                     variant="secondary"
                     className="h-10 min-w-0 px-3 sm:px-4"
                     disabled={!item.enabled || item.voiceDefault || updating || deleting}
-                    onClick={() => void updateProvider(item, { voiceDefault: true }, '设置语音默认模型')}
+                    onClick={() => void updateProvider(item, { voiceDefault: true })}
                   ><Mic2 className="h-4 w-4" />{item.voiceDefault ? '语音默认' : '设为语音'}</Button>}
                   <Button
                     variant="secondary"

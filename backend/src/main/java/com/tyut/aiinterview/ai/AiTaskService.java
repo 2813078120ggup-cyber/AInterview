@@ -23,8 +23,12 @@ import com.tyut.aiinterview.mapper.InterviewMapper;
 import com.tyut.aiinterview.mapper.InterviewQuestionMapper;
 import com.tyut.aiinterview.mapper.QuestionMapper;
 import com.tyut.aiinterview.mapper.ReportMapper;
+import com.tyut.aiinterview.observability.OperationAuditService;
 import com.tyut.aiinterview.prompt.PromptCatalog;
 import com.tyut.aiinterview.prompt.PromptTemplateService;
+import com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService;
+import com.tyut.aiinterview.recruitment.RecruitmentJobMatchService;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,11 +37,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -51,6 +57,8 @@ public class AiTaskService {
     public static final String FREE_INTERVIEW_ANALYSIS = "FREE_ANALYSIS";
     public static final String FREE_INTERVIEW_FOLLOW_UP = "FREE_FOLLOW_UP";
     public static final String FREE_INTERVIEW_REPORT = "FREE_REPORT";
+    public static final String RESUME_PARSE = "RESUME_PARSE";
+    public static final String JOB_MATCH = "JOB_MATCH";
 
     private final AiTaskMapper taskMapper;
     private final InterviewMapper interviewMapper;
@@ -70,7 +78,13 @@ public class AiTaskService {
     private final CurrentUser currentUser;
     private final Executor aiTaskWorkerExecutor;
     private final Executor reportScoringExecutor;
+    private final RecruitmentResumeAnalysisService recruitmentResumeAnalysisService;
     private final int taskFetchLimit;
+    private RecruitmentJobMatchService recruitmentJobMatchService;
+    private CompanyAccessService companyAccessService;
+    private OperationAuditService operationAuditService;
+    @Value("${app.ai-task.scheduler-enabled:true}")
+    private boolean schedulerEnabled = true;
 
     public AiTaskService(AiTaskMapper taskMapper, InterviewMapper interviewMapper, InterviewQuestionMapper interviewQuestionMapper,
                          InterviewAnswerMapper answerMapper, QuestionMapper questionMapper, EvaluationMapper evaluationMapper,
@@ -78,6 +92,7 @@ public class AiTaskService {
                          FreeInterviewTurnMapper freeTurnMapper, DeepSeekGateway deepSeekGateway,
                          PromptTemplateService promptTemplates, ChoiceAnswerScorer choiceAnswerScorer,
                          ObjectMapper objectMapper, CurrentUser currentUser,
+                         RecruitmentResumeAnalysisService recruitmentResumeAnalysisService,
                          @Qualifier("aiTaskWorkerExecutor") Executor aiTaskWorkerExecutor,
                          @Qualifier("reportScoringExecutor") Executor reportScoringExecutor,
                          @Value("${app.ai-task.fetch-limit:12}") int taskFetchLimit) {
@@ -97,6 +112,7 @@ public class AiTaskService {
         this.simulationFollowUpPolicy = new SimulationFollowUpPolicy(objectMapper);
         this.followUpQualityGuard = new FollowUpQualityGuard();
         this.currentUser = currentUser;
+        this.recruitmentResumeAnalysisService = recruitmentResumeAnalysisService;
         this.aiTaskWorkerExecutor = aiTaskWorkerExecutor;
         this.reportScoringExecutor = reportScoringExecutor;
         this.taskFetchLimit = Math.max(1, Math.min(50, taskFetchLimit));
@@ -171,9 +187,30 @@ public class AiTaskService {
     }
 
     @Transactional
+    public AiTask enqueueResumeAnalysis(Long resumeId, Long analysisId, int analysisVersion) {
+        return enqueue(null, null, RESUME_PARSE, "resume-parse:" + resumeId + ":" + analysisVersion,
+                json("resumeId", resumeId, "analysisId", analysisId, "analysisVersion", analysisVersion), 3);
+    }
+
+    public AiTask enqueueJobMatch(Long applicationId, Long positionId, Long resumeId, int resumeVersion,
+                                  int evaluationVersion, Long createdBy) {
+        return enqueue(null, null, JOB_MATCH, "job-match:" + applicationId + ":" + evaluationVersion,
+                json("applicationId", applicationId, "positionId", positionId, "resumeId", resumeId,
+                        "resumeVersion", resumeVersion, "evaluationVersion", evaluationVersion), 3, createdBy);
+    }
+
+    @Transactional
     public AiTask retryAutomaticEvaluation(Long interviewId) {
         Interview interview = requireInterview(interviewId);
-        requireParticipant(interview);
+        if (currentUser.hasRole("ADMIN")) {
+            // Platform operations are already protected by the admin controller
+            // and may retry a failed technical report task without being an
+            // interview participant.
+        } else if (currentUser.hasCompanyRole() && companyAccessService != null) {
+            companyAccessService.requireAuthorizedInterview(interviewId);
+        } else {
+            requireParticipant(interview);
+        }
         if (interview.getStatus() == Interview.REPORT_READY) {
             return latestEvaluationTask(interviewId);
         }
@@ -208,6 +245,63 @@ public class AiTaskService {
         return existing;
     }
 
+    /**
+     * Platform operations may retry only recruitment technical tasks. The
+     * existing dedupe key and payload are reused, so repeated requests never
+     * create a second task or advance a business decision.
+     */
+    @Transactional
+    public AiTask retryAdminRecruitmentTask(Long taskId) {
+        if (!currentUser.hasRole("ADMIN")) throw BusinessException.forbidden("仅超级管理员可重试招聘技术任务");
+        AiTask task = taskMapper.selectById(taskId);
+        if (task == null) throw BusinessException.notFound("AI 任务不存在");
+        if (!Set.of(JOB_MATCH, AUTO_EVALUATION).contains(task.getTaskType())) {
+            throw BusinessException.badRequest("该任务类型不支持招聘运营重试");
+        }
+        if (!"FAILED".equals(task.getStatus())) return task;
+        if (!isTechnicalRecruitmentFailure(task)) {
+            throw BusinessException.badRequest("该任务属于业务数据问题，不支持平台自动重试");
+        }
+        if (AUTO_EVALUATION.equals(task.getTaskType())) {
+            return retryAutomaticEvaluation(task.getInterviewId());
+        }
+        resetTask(task, task.getInputPayload(), task.getMaxAttempts(), currentUser.id());
+        return task;
+    }
+
+    /**
+     * Platform AI operations retry an existing failed task in place. The
+     * dedupe key is never replaced, so repeated requests cannot create a
+     * second task or duplicate a business result.
+     */
+    @Transactional
+    public AiTask retryAdminAiTask(Long taskId) {
+        if (!currentUser.hasRole("ADMIN")) throw BusinessException.forbidden("仅超级管理员可重试 AI 任务");
+        AiTask task = taskMapper.selectById(taskId);
+        if (task == null) throw BusinessException.notFound("AI 任务不存在");
+        if (!Set.of(FOLLOW_UP, OPENING, AUTO_EVALUATION, FREE_INTERVIEW_ANALYSIS,
+                FREE_INTERVIEW_FOLLOW_UP, FREE_INTERVIEW_REPORT, RESUME_PARSE, JOB_MATCH)
+                .contains(task.getTaskType())) {
+            throw BusinessException.badRequest("该任务类型不支持平台受控重试");
+        }
+        if (!"FAILED".equals(task.getStatus())) return task;
+        if (!isTechnicalRecruitmentFailure(task)) {
+            throw BusinessException.badRequest("该任务属于业务数据问题，不支持平台自动重试");
+        }
+        if (AUTO_EVALUATION.equals(task.getTaskType())) return retryAutomaticEvaluation(task.getInterviewId());
+        resetTask(task, task.getInputPayload(), task.getMaxAttempts(), currentUser.id());
+        return task;
+    }
+
+    private boolean isTechnicalRecruitmentFailure(AiTask task) {
+        String message = task.getErrorMessage() == null ? "" : task.getErrorMessage().toLowerCase();
+        return !(message.contains("尚未完成解析") || message.contains("不存在")
+                || message.contains("未配置题目") || message.contains("缺少岗位或简历")
+                || message.contains("不能自动评分") || message.contains("任务参数损坏")
+                || message.contains("尚未进入报告生成中") || message.contains("面试未配置题目")
+                || message.contains("当前面试状态不允许") || message.contains("缺少面试"));
+    }
+
     public AiTask get(Long id) {
         AiTask task = taskMapper.selectById(id);
         if (task == null) throw BusinessException.notFound("AI 任务不存在");
@@ -229,6 +323,7 @@ public class AiTaskService {
 
     @Scheduled(fixedDelayString = "${app.ai-task.poll-interval-ms:1000}")
     public void processPendingTasks() {
+        if (!schedulerEnabled) return;
         List<AiTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<AiTask>().eq(AiTask::getStatus, "PENDING")
                 .le(AiTask::getScheduledAt, LocalDateTime.now())
                 .last("ORDER BY CASE WHEN task_type = 'AUTO_EVALUATION' THEN 0 "
@@ -244,6 +339,11 @@ public class AiTaskService {
     public void process(Long id) {
         AiTask claimed = claim(id);
         if (claimed != null) executeClaimed(claimed);
+    }
+
+    @Autowired
+    public void setOperationAuditService(OperationAuditService operationAuditService) {
+        this.operationAuditService = operationAuditService;
     }
 
     private AiTask claim(Long id) {
@@ -266,6 +366,8 @@ public class AiTaskService {
                 case FREE_INTERVIEW_ANALYSIS -> analyzeFreeInterview(task);
                 case FREE_INTERVIEW_FOLLOW_UP -> freeInterviewFollowUp(task);
                 case FREE_INTERVIEW_REPORT -> freeInterviewReport(task);
+                case RESUME_PARSE -> recruitmentResumeAnalysisService.process(task);
+                case JOB_MATCH -> recruitmentJobMatchService.process(task);
                 default -> throw new IllegalArgumentException("不支持的 AI 任务类型：" + task.getTaskType());
             };
             task.setStatus("SUCCESS");
@@ -275,6 +377,8 @@ public class AiTaskService {
             taskMapper.updateById(task);
             if (AUTO_EVALUATION.equals(task.getTaskType())) {
                 markInterviewReportReady(task.getInterviewId());
+                if (operationAuditService != null) operationAuditService.success("REPORT", "REPORT_GENERATED",
+                        "REPORT", task.getInterviewId(), null, "AI 面试报告生成完成");
             }
         } catch (RuntimeException exception) {
             if (FREE_INTERVIEW_FOLLOW_UP.equals(task.getTaskType())) {
@@ -288,6 +392,8 @@ public class AiTaskService {
                 task.setFinishedAt(LocalDateTime.now());
                 if (AUTO_EVALUATION.equals(task.getTaskType())) {
                     markInterviewEvaluationFailed(task.getInterviewId());
+                    if (operationAuditService != null) operationAuditService.failure("REPORT", "REPORT_GENERATION_FAILED",
+                            "REPORT", task.getInterviewId(), null, "AI 面试报告生成失败");
                 }
                 if (FREE_INTERVIEW_ANALYSIS.equals(task.getTaskType()) || FREE_INTERVIEW_REPORT.equals(task.getTaskType())) {
                     markFreeInterviewFailed(task);
@@ -555,8 +661,11 @@ public class AiTaskService {
         report.setReportPromptCode(PromptCatalog.SIMULATION_REPORT);
         report.setReportPromptVersionNo(reportPromptVersion);
         report.setGeneratedBy(task.getCreatedBy());
-        report.setStatus(1);
-        report.setPublishedAt(LocalDateTime.now());
+        // Recruitment reports are an internal HR review artifact first. The
+        // candidate-facing publication is an explicit, separately authorized
+        // action on the company application endpoint.
+        report.setStatus(0);
+        report.setPublishedAt(null);
         if (report.getId() == null) reportMapper.insert(report); else reportMapper.updateById(report);
         return report;
     }
@@ -618,11 +727,16 @@ public class AiTaskService {
     }
 
     private AiTask enqueue(Long interviewId, Long answerId, String type, String dedupeKey, String payload, int maxAttempts) {
+        return enqueue(interviewId, answerId, type, dedupeKey, payload, maxAttempts, currentUser.id());
+    }
+
+    private AiTask enqueue(Long interviewId, Long answerId, String type, String dedupeKey, String payload,
+                           int maxAttempts, Long createdBy) {
         if (dedupeKey != null) {
             AiTask existing = taskMapper.selectOne(new LambdaQueryWrapper<AiTask>().eq(AiTask::getDedupeKey, dedupeKey));
             if (existing != null) {
                 if ("FAILED".equals(existing.getStatus())) {
-                    resetTask(existing, payload, maxAttempts);
+                    resetTask(existing, payload, maxAttempts, createdBy);
                 }
                 return existing;
             }
@@ -637,12 +751,16 @@ public class AiTaskService {
         task.setMaxAttempts(maxAttempts);
         task.setScheduledAt(LocalDateTime.now());
         task.setInputPayload(payload);
-        task.setCreatedBy(currentUser.id());
+        task.setCreatedBy(createdBy);
         taskMapper.insert(task);
         return task;
     }
 
     private void resetTask(AiTask task, String payload, int maxAttempts) {
+        resetTask(task, payload, maxAttempts, currentUser.id());
+    }
+
+    private void resetTask(AiTask task, String payload, int maxAttempts, Long createdBy) {
         task.setStatus("PENDING");
         task.setAttempts(0);
         task.setScheduledAt(LocalDateTime.now());
@@ -651,9 +769,19 @@ public class AiTaskService {
         task.setInputPayload(payload);
         task.setOutputPayload(null);
         task.setErrorMessage(null);
-        task.setCreatedBy(currentUser.id());
+        task.setCreatedBy(createdBy);
         task.setMaxAttempts(maxAttempts);
         taskMapper.updateById(task);
+    }
+
+    @Autowired
+    public void setRecruitmentJobMatchService(RecruitmentJobMatchService recruitmentJobMatchService) {
+        this.recruitmentJobMatchService = recruitmentJobMatchService;
+    }
+
+    @Autowired
+    public void setCompanyAccessService(CompanyAccessService companyAccessService) {
+        this.companyAccessService = companyAccessService;
     }
 
     private FreeInterviewSession requireFreeSession(Long id) {

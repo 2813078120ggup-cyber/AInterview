@@ -1,9 +1,10 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { AiAssistant } from '@/components/ai-assistant'
 import { AdminPageShell } from '@/components/admin-page-shell'
 import { CandidatePageShell } from '@/components/candidate-page-shell'
+import { CompanyPageShell } from '@/components/company-page-shell'
 import { GlobalMouseFollower } from '@/components/global-mouse-follower'
 import { PageTransition } from '@/components/page-transition'
 import { profile } from '@/lib/session'
@@ -21,8 +22,12 @@ const lazyPage = (factory: () => Promise<{ default: ComponentType }>): Component
 
 const AdminAuditLog = lazyPage(() => import('@/pages/admin-audit-log').then(module => ({ default: module.AdminAuditLog })))
 const AdminAiGenerations = lazyPage(() => import('@/pages/admin-ai-generations').then(module => ({ default: module.AdminAiGenerations })))
+const AdminAiOperations = lazyPage(() => import('@/pages/admin-ai-operations').then(module => ({ default: module.AdminAiOperations })))
+const AdminAiTrace = lazyPage(() => import('@/pages/admin-ai-trace').then(module => ({ default: module.AdminAiTrace })))
 const AdminCandidateDetail = lazyPage(() => import('@/pages/admin-candidate-detail').then(module => ({ default: module.AdminCandidateDetail })))
 const AdminCandidates = lazyPage(() => import('@/pages/admin-candidates').then(module => ({ default: module.AdminCandidates })))
+const AdminCompanies = lazyPage(() => import('@/pages/admin-companies').then(module => ({ default: module.AdminCompanies })))
+const AdminCompanyDetail = lazyPage(() => import('@/pages/admin-company-detail').then(module => ({ default: module.AdminCompanyDetail })))
 const AdminInterviewReview = lazyPage(() => import('@/pages/admin-interview-review').then(module => ({ default: module.AdminInterviewReview })))
 const AdminInterviews = lazyPage(() => import('@/pages/admin-interviews').then(module => ({ default: module.AdminInterviews })))
 const AdminQuestionBanks = lazyPage(() => import('@/pages/admin-question-banks').then(module => ({ default: module.AdminQuestionBanks })))
@@ -30,6 +35,12 @@ const AdminQuestions = lazyPage(() => import('@/pages/admin-questions').then(mod
 const AdminPromptTemplates = lazyPage(() => import('@/pages/admin-prompt-templates').then(module => ({ default: module.AdminPromptTemplates })))
 const AdminSettings = lazyPage(() => import('@/pages/admin-settings').then(module => ({ default: module.AdminSettings })))
 const AdminWorkspace = lazyPage(() => import('@/pages/admin-workspace').then(module => ({ default: module.AdminWorkspace })))
+const AdminOperations = lazyPage(() => import('@/pages/admin-operations').then(module => ({ default: module.AdminOperations })))
+const AdminUsers = lazyPage(() => import('@/pages/admin-users').then(module => ({ default: module.AdminUsers })))
+const AdminUserDetail = lazyPage(() => import('@/pages/admin-user-detail').then(module => ({ default: module.AdminUserDetail })))
+const AdminRoles = lazyPage(() => import('@/pages/admin-roles').then(module => ({ default: module.AdminRoles })))
+const AdminRecruitment = lazyPage(() => import('@/pages/admin-recruitment').then(module => ({ default: module.AdminRecruitment })))
+const AdminRecruitmentApplicationDetail = lazyPage(() => import('@/pages/admin-recruitment-application-detail').then(module => ({ default: module.AdminRecruitmentApplicationDetail })))
 const AdminAlgorithmProblems = lazyPage(() => import('@/pages/admin/AdminAlgorithmProblemsPage').then(module => ({ default: module.AdminAlgorithmProblemsPage })))
 const AdminLearningResources = lazyPage(() => import('@/pages/admin-learning-resources').then(module => ({ default: module.AdminLearningResources })))
 const AbilityDashboard = lazyPage(() => import('@/pages/ability-dashboard').then(module => ({ default: module.AbilityDashboard })))
@@ -47,15 +58,35 @@ const LearningResourceViewer = lazyPage(() => import('@/pages/learning-resource-
 const CandidateCalendar = lazyPage(() => import('@/pages/candidate-calendar').then(module => ({ default: module.CandidateCalendar })))
 const CandidateLobby = lazyPage(() => import('@/pages/candidate-lobby').then(module => ({ default: module.CandidateLobby })))
 const CandidateProfile = lazyPage(() => import('@/pages/candidate-profile').then(module => ({ default: module.CandidateProfile })))
+const CandidateSecurity = lazyPage(() => import('@/pages/candidate-security').then(module => ({ default: module.CandidateSecurity })))
+const CandidateNotificationPreferences = lazyPage(() => import('@/pages/candidate-notification-preferences').then(module => ({ default: module.CandidateNotificationPreferences })))
 const CandidateReport = lazyPage(() => import('@/pages/candidate-report').then(module => ({ default: module.CandidateReport })))
 const CandidateReflections = lazyPage(() => import('@/pages/candidate-reflections').then(module => ({ default: module.CandidateReflections })))
 const CandidateTickets = lazyPage(() => import('@/pages/candidate-tickets').then(module => ({ default: module.CandidateTickets })))
 const CandidateTicketCreate = lazyPage(() => import('@/pages/candidate-ticket-create').then(module => ({ default: module.CandidateTicketCreate })))
 const CandidateTicketDetail = lazyPage(() => import('@/pages/candidate-ticket-detail').then(module => ({ default: module.CandidateTicketDetail })))
 const CandidateWorkspaceOverview = lazyPage(() => import('@/pages/candidate-workspace').then(module => ({ default: module.CandidateWorkspaceOverview })))
+const CandidateJobHall = lazyPage(() => import('@/pages/candidate-job-hall').then(module => ({ default: module.CandidateJobHall })))
+const CandidateApplications = lazyPage(() => import('@/pages/candidate-applications').then(module => ({ default: module.CandidateApplications })))
+const CandidateResumes = lazyPage(() => import('@/pages/candidate-resumes').then(module => ({ default: module.CandidateResumes })))
+const CompanyDashboard = lazyPage(() => import('@/pages/company-dashboard').then(module => ({ default: module.CompanyDashboard })))
+const CompanyPositions = lazyPage(() => import('@/pages/company-positions').then(module => ({ default: module.CompanyPositions })))
+const CompanyPositionDetail = lazyPage(() => import('@/pages/company-position-detail').then(module => ({ default: module.CompanyPositionDetail })))
+const CompanyPositionForm = lazyPage(() => import('@/pages/company-position-form').then(module => ({ default: module.CompanyPositionForm })))
+const CompanyApplications = lazyPage(() => import('@/pages/company-applications').then(module => ({ default: module.CompanyApplications })))
+const CompanyApplicationDetail = lazyPage(() => import('@/pages/company-application-detail').then(module => ({ default: module.CompanyApplicationDetail })))
+const CompanyTalentPool = lazyPage(() => import('@/pages/company-talent-pool').then(module => ({ default: module.CompanyTalentPool })))
+const CompanyTalentPoolDetail = lazyPage(() => import('@/pages/company-talent-pool-detail').then(module => ({ default: module.CompanyTalentPoolDetail })))
+const CompanyInterviews = lazyPage(() => import('@/pages/company-interviews').then(module => ({ default: module.CompanyInterviews })))
+const CompanyInterviewDetail = lazyPage(() => import('@/pages/company-interview-detail').then(module => ({ default: module.CompanyInterviewDetail })))
+const CompanySettings = lazyPage(() => import('@/pages/company-settings').then(module => ({ default: module.CompanySettings })))
+const CompanyTeam = lazyPage(() => import('@/pages/company-team').then(module => ({ default: module.CompanyTeam })))
+const CompanyAnalytics = lazyPage(() => import('@/pages/company-analytics').then(module => ({ default: module.CompanyAnalytics })))
+const CompanyAnalyticsPositions = lazyPage(() => import('@/pages/company-analytics-positions').then(module => ({ default: module.CompanyAnalyticsPositions })))
 const FreeInterview = lazyPage(() => import('@/pages/free-interview').then(module => ({ default: module.FreeInterview })))
 const InterviewRoom = lazyPage(() => import('@/pages/interview-room').then(module => ({ default: module.InterviewRoom })))
 const LoginPage = lazyPage(() => import('@/pages/login').then(module => ({ default: module.LoginPage })))
+const FeaturesPage = lazyPage(() => import('@/pages/features').then(module => ({ default: module.FeaturesPage })))
 const AdminTickets = lazyPage(() => import('@/pages/admin-tickets').then(module => ({ default: module.AdminTickets })))
 const AdminTicketDetail = lazyPage(() => import('@/pages/admin-ticket-detail').then(module => ({ default: module.AdminTicketDetail })))
 
@@ -67,11 +98,13 @@ function ContentFallback() {
   return <div className="grid min-h-[45vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
 }
 
-function Protected({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
+function Protected({ children, admin = false, company = false }: { children: ReactNode; admin?: boolean; company?: boolean }) {
   const current = profile()
   if (!current) return <Navigate to="/login" replace />
   if (admin && !current.roles.includes('ADMIN')) return <Navigate to="/candidate/interviews" replace />
-  return <>{children}{!admin && !current.roles.includes('ADMIN') && <AiAssistant />}</>
+  const companyRole = current.roles.some(role => ['COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'].includes(role))
+  if (company && !companyRole) return <Navigate to="/login" replace />
+  return <>{children}{!admin && !company && !current.roles.includes('ADMIN') && !companyRole && <AiAssistant />}</>
 }
 
 function CandidateWorkspace() {
@@ -84,13 +117,48 @@ function AbilityPage() {
   return <CandidatePageShell><AbilityDashboard /></CandidatePageShell>
 }
 
+function CandidateSettingsRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/candidate/settings/profile${location.search}`} replace />
+}
+
 export function App() {
+  const location = useLocation()
   return <>
-    <GlobalMouseFollower />
+    {location.pathname !== '/' && location.pathname !== '/features' && <GlobalMouseFollower />}
     <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+        <Route path="/features" element={<FeaturesPage />} />
+        <Route path="/company" element={<Protected company><CompanyPageShell><CompanyDashboard /></CompanyPageShell></Protected>} />
+        <Route path="/company/positions/new" element={<Protected company><CompanyPageShell><CompanyPositionForm /></CompanyPageShell></Protected>} />
+        <Route path="/company/positions/:id/edit" element={<Protected company><CompanyPageShell><CompanyPositionForm /></CompanyPageShell></Protected>} />
+        <Route path="/company/positions/:id" element={<Protected company><CompanyPageShell><CompanyPositionDetail /></CompanyPageShell></Protected>} />
+        <Route path="/company/positions" element={<Protected company><CompanyPageShell><CompanyPositions /></CompanyPageShell></Protected>} />
+        <Route path="/company/applications/:id" element={<Protected company><CompanyPageShell><CompanyApplicationDetail /></CompanyPageShell></Protected>} />
+        <Route path="/company/applications" element={<Protected company><CompanyPageShell><CompanyApplications /></CompanyPageShell></Protected>} />
+        <Route path="/company/talent-pool/:candidateId" element={<Protected company><CompanyPageShell><CompanyTalentPoolDetail /></CompanyPageShell></Protected>} />
+        <Route path="/company/talent-pool" element={<Protected company><CompanyPageShell><CompanyTalentPool /></CompanyPageShell></Protected>} />
+        <Route path="/company/interviews/calendar" element={<Protected company><CompanyPageShell><CompanyInterviews /></CompanyPageShell></Protected>} />
+        <Route path="/company/interviews/:id" element={<Protected company><CompanyPageShell><CompanyInterviewDetail /></CompanyPageShell></Protected>} />
+        <Route path="/company/interviews" element={<Protected company><CompanyPageShell><CompanyInterviews /></CompanyPageShell></Protected>} />
+        <Route path="/company/settings" element={<Protected company><CompanyPageShell><CompanySettings /></CompanyPageShell></Protected>} />
+        <Route path="/company/team" element={<Protected company><CompanyPageShell><CompanyTeam /></CompanyPageShell></Protected>} />
+        <Route path="/company/analytics/positions" element={<Protected company><CompanyPageShell><CompanyAnalyticsPositions /></CompanyPageShell></Protected>} />
+        <Route path="/company/analytics" element={<Protected company><CompanyPageShell><CompanyAnalytics /></CompanyPageShell></Protected>} />
         <Route path="/admin/workspace" element={<Protected admin><AdminPageShell><AdminWorkspace /></AdminPageShell></Protected>} />
+        <Route path="/admin/dashboard" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
+        <Route path="/admin/index" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
+        <Route path="/admin/companies/:id" element={<Protected admin><AdminPageShell><AdminCompanyDetail /></AdminPageShell></Protected>} />
+        <Route path="/admin/companies" element={<Protected admin><AdminPageShell><AdminCompanies /></AdminPageShell></Protected>} />
+        <Route path="/admin/users/:id" element={<Protected admin><AdminPageShell><AdminUserDetail /></AdminPageShell></Protected>} />
+        <Route path="/admin/users" element={<Protected admin><AdminPageShell><AdminUsers /></AdminPageShell></Protected>} />
+        <Route path="/admin/roles" element={<Protected admin><AdminPageShell><AdminRoles /></AdminPageShell></Protected>} />
+        <Route path="/admin/recruitment/applications/:id" element={<Protected admin><AdminPageShell><AdminRecruitmentApplicationDetail /></AdminPageShell></Protected>} />
+        <Route path="/admin/recruitment" element={<Protected admin><AdminPageShell><AdminRecruitment /></AdminPageShell></Protected>} />
+        <Route path="/admin/ai-operations/traces/generations/:id" element={<Protected admin><AdminPageShell><AdminAiTrace /></AdminPageShell></Protected>} />
+        <Route path="/admin/ai-operations" element={<Protected admin><AdminPageShell><AdminAiOperations /></AdminPageShell></Protected>} />
+        <Route path="/admin/ai" element={<Protected admin><Navigate to="/admin/ai-operations" replace /></Protected>} />
         <Route path="/admin/interviews" element={<Protected admin><AdminPageShell><AdminInterviews /></AdminPageShell></Protected>} />
         <Route path="/admin/interviews/:id/review" element={<Protected admin><AdminPageShell><AdminInterviewReview /></AdminPageShell></Protected>} />
         <Route path="/admin/interviews/:id/room" element={<Protected admin><AdminPageShell><AdminInterviewReview /></AdminPageShell></Protected>} />
@@ -104,6 +172,7 @@ export function App() {
         <Route path="/admin/prompt-templates" element={<Protected admin><AdminPageShell><AdminPromptTemplates /></AdminPageShell></Protected>} />
         <Route path="/admin/ai-generations" element={<Protected admin><AdminPageShell><AdminAiGenerations /></AdminPageShell></Protected>} />
       <Route path="/admin/audit-logs" element={<Protected admin><AdminPageShell><AdminAuditLog /></AdminPageShell></Protected>} />
+      <Route path="/admin/operations" element={<Protected admin><AdminPageShell><AdminOperations /></AdminPageShell></Protected>} />
       <Route path="/admin/algorithm/problems" element={<Protected admin><AdminPageShell><AdminAlgorithmProblems /></AdminPageShell></Protected>} />
       <Route path="/admin/learning-resources" element={<Protected admin><AdminPageShell><AdminLearningResources /></AdminPageShell></Protected>} />
       <Route path="/admin/learning-resources/:publicId" element={<Protected admin><AdminPageShell><LearningResourceViewer /></AdminPageShell></Protected>} />
@@ -111,6 +180,9 @@ export function App() {
         <Route path="/candidate/interviews/:id/room" element={<Protected><PageTransition><InterviewRoom /></PageTransition></Protected>} />
         <Route path="/candidate/interviews/:id/report" element={<Protected><PageTransition><CandidateReport /></PageTransition></Protected>} />
         <Route path="/candidate/free-interview" element={<Protected><PageTransition><FreeInterview /></PageTransition></Protected>} />
+        <Route path="/jobs" element={<Protected><CandidatePageShell><CandidateJobHall /></CandidatePageShell></Protected>} />
+        <Route path="/applications" element={<Protected><CandidatePageShell><CandidateApplications /></CandidatePageShell></Protected>} />
+        <Route path="/resumes" element={<Protected><CandidatePageShell><CandidateResumes /></CandidatePageShell></Protected>} />
         <Route path="/candidate/tickets" element={<Protected><CandidatePageShell><CandidateTickets /></CandidatePageShell></Protected>} />
         <Route path="/candidate/tickets/new" element={<Protected><CandidatePageShell><CandidateTicketCreate /></CandidatePageShell></Protected>} />
         <Route path="/candidate/tickets/:id/edit" element={<Protected><CandidatePageShell><CandidateTicketCreate /></CandidatePageShell></Protected>} />
@@ -120,9 +192,13 @@ export function App() {
         <Route path="/library" element={<Protected><CandidateLibrary /></Protected>} />
         <Route path="/learning-resources" element={<Protected><CandidatePageShell><LearningResources /></CandidatePageShell></Protected>} />
         <Route path="/learning-resources/:publicId" element={<Protected><CandidatePageShell><LearningResourceViewer /></CandidatePageShell></Protected>} />
-        <Route path="/users" element={<Protected><CandidateProfile /></Protected>} />
+        <Route path="/candidate/settings/profile" element={<Protected><CandidatePageShell><CandidateProfile /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/settings/security" element={<Protected><CandidatePageShell><CandidateSecurity /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/settings/notifications" element={<Protected><CandidatePageShell><CandidateNotificationPreferences /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/settings" element={<Protected><CandidateSettingsRedirect /></Protected>} />
+        <Route path="/users" element={<Protected><CandidateSettingsRedirect /></Protected>} />
         <Route path="/interviews" element={<Navigate to="/candidate/interviews" replace />} />
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<FeaturesPage />} />
         <Route path="*" element={<Protected><CandidateWorkspace /></Protected>} />
       </Routes>
     </Suspense>

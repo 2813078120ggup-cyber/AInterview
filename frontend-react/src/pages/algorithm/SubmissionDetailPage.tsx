@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { AlgorithmPageHeader } from '@/components/algorithm/algorithm-page'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { CodeEditor } from '@/components/algorithm/CodeEditor'
+import { LazyCodeEditor } from '@/components/algorithm/LazyCodeEditor'
 import { algorithmApi, type AlgorithmSubmissionDetail } from '@/lib/algorithm-api'
 import { algorithmStatusLabel, algorithmStatusTone } from '@/lib/algorithm-status'
 import { useTheme } from '@/lib/theme'
@@ -73,7 +73,7 @@ export function SubmissionDetailPage() {
 
       <Card className="overflow-hidden">
         <div className="border-b border-border p-4"><h2 className="font-bold">提交代码</h2></div>
-        <CodeEditor value={item.sourceCode} onChange={() => undefined} height={420} readOnly dark={dark} />
+        <LazyCodeEditor value={item.sourceCode} onChange={() => undefined} height={420} readOnly dark={dark} />
       </Card>
     </div>
   )

@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.report;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.tyut.aiinterview.ai.DeepSeekGateway;
 import com.tyut.aiinterview.common.BusinessException;
@@ -15,6 +16,9 @@ import com.tyut.aiinterview.mapper.InterviewMapper;
 import com.tyut.aiinterview.mapper.InterviewQuestionMapper;
 import com.tyut.aiinterview.mapper.ReportMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
+import com.tyut.aiinterview.observability.OperationAuditService;
+import com.tyut.aiinterview.notification.SiteNotificationService;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -23,9 +27,11 @@ import java.util.List;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -34,10 +40,26 @@ public class ReportService {
     private final ReportMapper reportMapper; private final InterviewMapper interviewMapper; private final InterviewQuestionMapper questionMapper;
     private final EvaluationMapper evaluationMapper; private final UserMapper userMapper; private final CurrentUser currentUser;
     private final DeepSeekGateway deepSeekGateway;
+    private final CompanyAccessService companyAccess;
+    private final OperationAuditService auditService;
+    private final SiteNotificationService notificationService;
     public ReportService(ReportMapper reportMapper, InterviewMapper interviewMapper, InterviewQuestionMapper questionMapper,
-                         EvaluationMapper evaluationMapper, UserMapper userMapper, CurrentUser currentUser, DeepSeekGateway deepSeekGateway) {
+                         EvaluationMapper evaluationMapper, UserMapper userMapper, CurrentUser currentUser,
+                         DeepSeekGateway deepSeekGateway, CompanyAccessService companyAccess) {
+        this(reportMapper, interviewMapper, questionMapper, evaluationMapper, userMapper, currentUser,
+                deepSeekGateway, companyAccess, null, null);
+    }
+
+    @Autowired
+    public ReportService(ReportMapper reportMapper, InterviewMapper interviewMapper, InterviewQuestionMapper questionMapper,
+                         EvaluationMapper evaluationMapper, UserMapper userMapper, CurrentUser currentUser,
+                         DeepSeekGateway deepSeekGateway, CompanyAccessService companyAccess,
+                         OperationAuditService auditService, SiteNotificationService notificationService) {
         this.reportMapper = reportMapper; this.interviewMapper = interviewMapper; this.questionMapper = questionMapper;
-        this.evaluationMapper = evaluationMapper; this.userMapper = userMapper; this.currentUser = currentUser; this.deepSeekGateway = deepSeekGateway;
+        this.evaluationMapper = evaluationMapper; this.userMapper = userMapper; this.currentUser = currentUser;
+        this.deepSeekGateway = deepSeekGateway; this.companyAccess = companyAccess;
+        this.auditService = auditService;
+        this.notificationService = notificationService;
     }
     @Transactional
     public Report generate(Long interviewId) {
@@ -59,12 +81,14 @@ public class ReportService {
         report.setTotalScore(reportTotalScore(evaluations)); report.setSummary("根据本次面试作答与评测数据生成的综合评估。");
         report.setStrengths("请结合各维度得分与评语进一步确认候选人优势。"); report.setWeaknesses("请结合各维度得分与评语进一步确认待提升项。");
         report.setImprovementSuggestions("建议围绕得分较低的能力维度进行针对性训练。"); report.setGenerationMethod("manual"); report.setGeneratedBy(currentUser.id());
-        report.setStatus(0); report.setPublishedAt(null);
+        report.setStatus(0); report.setPublishedAt(null); report.setGeneratedAt(LocalDateTime.now());
         if (report.getId() == null) reportMapper.insert(report); else reportMapper.updateById(report);
         if (interview.getStatus() == Interview.COMPLETED || interview.getStatus() == Interview.REPORT_GENERATING || interview.getStatus() == Interview.FAILED) {
             interview.setStatus(Interview.REPORT_READY);
             interviewMapper.updateById(interview);
         }
+        if (auditService != null) auditService.success("REPORT", "REPORT_GENERATED", "REPORT", report.getId(), null,
+                "生成面试报告并关联面试 " + interviewId);
         return report;
     }
     public Report get(Long interviewId) {
@@ -72,6 +96,9 @@ public class ReportService {
         if (interview == null) throw BusinessException.notFound("面试不存在");
         Long id = currentUser.id();
         boolean manager = currentUser.hasRole("ADMIN");
+        if (!manager && currentUser.hasCompanyRole()) {
+            throw BusinessException.notFound("报告不存在");
+        }
         if (!(id.equals(interview.getCandidateId()) || id.equals(interview.getInterviewerId()) || manager)) throw BusinessException.forbidden("无权查看报告");
         Report report = reportMapper.selectOne(new LambdaQueryWrapper<Report>().eq(Report::getInterviewId, interviewId));
         if (report == null) throw BusinessException.notFound("报告尚未生成");
@@ -80,6 +107,24 @@ public class ReportService {
     }
     public ReportDtos.ReportDetail detail(Long interviewId) {
         Report report = get(interviewId);
+        return toReportDetail(report, interviewId);
+    }
+
+    public ReportDtos.CompanyReportDetail companyDetail(Long applicationId) {
+        companyAccess.requirePermission("report:read");
+        Report report = companyAccess.requireReportForApplication(applicationId);
+        long questionCount = questionMapper.selectCount(new LambdaQueryWrapper<InterviewQuestion>()
+                .eq(InterviewQuestion::getInterviewId, report.getInterviewId()));
+        return new ReportDtos.CompanyReportDetail(applicationId, report.getId(), report.getInterviewId(),
+                report.getTotalScore(), report.getProfessionalScore(), report.getExpressionScore(),
+                report.getLogicScore(), report.getAdaptabilityScore(), report.getSummary(), report.getStrengths(),
+                report.getWeaknesses(), report.getImprovementSuggestions(), report.getStatus(), report.getGeneratedAt(), report.getPublishedAt(),
+                questionCount, reliabilityWarning(questionCount),
+                Integer.valueOf(1).equals(report.getStatus()) ? "PUBLISHED" : "READY", null, null, null,
+                false, List.of(), null);
+    }
+
+    private ReportDtos.ReportDetail toReportDetail(Report report, Long interviewId) {
         long questionCount = questionMapper.selectCount(new LambdaQueryWrapper<InterviewQuestion>()
                 .eq(InterviewQuestion::getInterviewId, interviewId));
         return new ReportDtos.ReportDetail(report.getId(), report.getInterviewId(), report.getTotalScore(),
@@ -116,35 +161,80 @@ public class ReportService {
         if (report == null) throw BusinessException.notFound("报告尚未生成");
         if (report.getStatus() == 1) return report;
         report.setStatus(1); report.setPublishedAt(LocalDateTime.now()); reportMapper.updateById(report);
+        if (auditService != null) auditService.success("REPORT", "REPORT_PUBLISHED", "REPORT", report.getId(), null,
+                "发布面试报告并关联面试 " + interviewId);
+        Interview interview = interviewMapper.selectById(interviewId);
+        if (notificationService != null && interview != null && interview.getCandidateId() != null) {
+            notificationService.create(interview.getCandidateId(), "REPORT_PUBLISHED", "面试报告已发布",
+                    "你的面试评测报告已发布，可以前往评测报告查看。", "REPORT", report.getId(),
+                    "report-published-" + report.getId());
+        }
         return report;
     }
     public PageResult<ReportDtos.ReportListItem> pageForAdmin(ReportDtos.ReportQuery query) {
         requireHr();
         long pageNo = query.pageNo() == null ? 1 : Math.max(1, query.pageNo());
         long pageSize = query.pageSize() == null ? 20 : Math.min(100, Math.max(1, query.pageSize()));
-        Map<Long, Interview> interviews = interviewMapper.selectList(null).stream().collect(Collectors.toMap(Interview::getId, Function.identity()));
-        Map<Long, UserAccount> candidates = userMapper.selectList(null).stream().collect(Collectors.toMap(UserAccount::getId, Function.identity()));
-        String keyword = query.keyword() == null ? "" : query.keyword().trim().toLowerCase();
-        List<ReportDtos.ReportListItem> all = reportMapper.selectList(new LambdaQueryWrapper<Report>().orderByDesc(Report::getPublishedAt).orderByDesc(Report::getId)).stream()
+        String keyword = query.keyword() == null ? "" : query.keyword().trim();
+        Set<Long> matchingInterviewIds = matchingInterviewIds(keyword);
+        if (!keyword.isBlank() && matchingInterviewIds.isEmpty()) {
+            return PageResult.of(List.of(), 0, pageNo, pageSize);
+        }
+
+        LambdaQueryWrapper<Report> wrapper = new LambdaQueryWrapper<Report>()
+                .orderByDesc(Report::getPublishedAt).orderByDesc(Report::getId);
+        if (!matchingInterviewIds.isEmpty()) {
+            wrapper.in(Report::getInterviewId, matchingInterviewIds);
+        }
+        Page<Report> page = reportMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
+        List<Long> interviewIds = page.getRecords().stream().map(Report::getInterviewId)
+                .filter(Objects::nonNull).distinct().toList();
+        Map<Long, Interview> interviews = interviewIds.isEmpty() ? Map.of()
+                : interviewMapper.selectBatchIds(interviewIds).stream()
+                        .collect(Collectors.toMap(Interview::getId, item -> item));
+        List<Long> candidateIds = interviews.values().stream().map(Interview::getCandidateId)
+                .filter(Objects::nonNull).distinct().toList();
+        Map<Long, UserAccount> candidates = candidateIds.isEmpty() ? Map.of()
+                : userMapper.selectBatchIds(candidateIds).stream()
+                        .collect(Collectors.toMap(UserAccount::getId, item -> item));
+        List<ReportDtos.ReportListItem> records = page.getRecords().stream()
                 .map(report -> toListItem(report, interviews.get(report.getInterviewId()), candidates))
-                .filter(Objects::nonNull)
-                .filter(item -> keyword.isBlank() || contains(item.interviewTitle(), keyword) || contains(item.candidateName(), keyword) || contains(item.candidateUsername(), keyword))
-                .toList();
-        int from = (int) Math.min((pageNo - 1) * pageSize, all.size());
-        int to = (int) Math.min(from + pageSize, all.size());
-        return PageResult.of(all.subList(from, to), all.size(), pageNo, pageSize);
+                .filter(Objects::nonNull).toList();
+        return PageResult.of(records, page.getTotal(), pageNo, pageSize);
     }
     public ReportDtos.CandidateAbilitySummary myAbilitySummary() {
         if (!currentUser.hasRole("CANDIDATE")) throw BusinessException.forbidden("仅候选人可查看能力仪表盘");
         Long candidateId = currentUser.id();
         Map<Long, Interview> interviews = interviewMapper.selectList(new LambdaQueryWrapper<Interview>().eq(Interview::getCandidateId, candidateId))
-                .stream().collect(Collectors.toMap(Interview::getId, Function.identity()));
-        List<ReportDtos.TrendPoint> trends = reportMapper.selectList(new LambdaQueryWrapper<Report>().eq(Report::getStatus, 1))
+                .stream().collect(Collectors.toMap(Interview::getId, item -> item));
+        List<Long> interviewIds = interviews.keySet().stream().toList();
+        if (interviewIds.isEmpty()) {
+            return new ReportDtos.CandidateAbilitySummary(0, null, null,
+                    new ReportDtos.ScoreChange(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
+        }
+        List<ReportDtos.TrendPoint> trends = reportMapper.selectList(new LambdaQueryWrapper<Report>()
+                        .eq(Report::getStatus, 1).in(Report::getInterviewId, interviewIds))
                 .stream().map(report -> toTrendPoint(report, interviews.get(report.getInterviewId())))
                 .filter(Objects::nonNull).sorted(Comparator.comparing(ReportDtos.TrendPoint::scheduledAt)).toList();
         ReportDtos.TrendPoint latest = trends.isEmpty() ? null : trends.get(trends.size() - 1);
         ReportDtos.TrendPoint previous = trends.size() < 2 ? null : trends.get(trends.size() - 2);
         return new ReportDtos.CandidateAbilitySummary(trends.size(), latest, previous, scoreChange(latest, previous), trends);
+    }
+
+    private Set<Long> matchingInterviewIds(String keyword) {
+        if (keyword.isBlank()) return Set.of();
+        List<Long> candidateIds = userMapper.selectList(new LambdaQueryWrapper<UserAccount>()
+                        .select(UserAccount::getId)
+                        .and(wrapper -> wrapper.like(UserAccount::getRealName, keyword)
+                                .or().like(UserAccount::getUsername, keyword)))
+                .stream().map(UserAccount::getId).filter(Objects::nonNull).toList();
+        LambdaQueryWrapper<Interview> wrapper = new LambdaQueryWrapper<Interview>()
+                .select(Interview::getId).like(Interview::getTitle, keyword);
+        if (!candidateIds.isEmpty()) {
+            wrapper.or().in(Interview::getCandidateId, candidateIds);
+        }
+        return interviewMapper.selectList(wrapper).stream().map(Interview::getId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
     }
     private ReportDtos.ReportListItem toListItem(Report report, Interview interview, Map<Long, UserAccount> candidates) {
         if (interview == null) return null;
@@ -180,7 +270,7 @@ public class ReportService {
                 .add(weightedDimensions.multiply(BigDecimal.valueOf(0.35)))
                 .setScale(2, RoundingMode.HALF_UP);
     }
-    static String reliabilityWarning(long questionCount) {
+    public static String reliabilityWarning(long questionCount) {
         if (questionCount >= MIN_RELIABLE_QUESTION_COUNT) return null;
         return "本次面试仅包含 " + questionCount + " 道题，题目样本过少，评测结果参考性有限，不能充分代表候选人的整体岗位能力。";
     }

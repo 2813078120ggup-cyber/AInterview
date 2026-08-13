@@ -189,8 +189,8 @@ export function ReportDetailView({
       <header className="no-print flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           {onBack && (
-            <button className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground" onClick={onBack}>
-              <ArrowLeft className="h-4 w-4" />
+            <button type="button" className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               {backLabel || '返回'}
             </button>
           )}
@@ -201,26 +201,26 @@ export function ReportDetailView({
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {extraActions}
           {trainingPlanEndpoint && (
-            <Button variant="secondary" onClick={() => void generateTrainingPlan()} disabled={planLoading}>
-              <ListChecks className="h-4 w-4" />
+            <Button type="button" variant="secondary" onClick={() => void generateTrainingPlan()} disabled={planLoading} aria-busy={planLoading}>
+              <ListChecks className="h-4 w-4" aria-hidden="true" />
               {planLoading ? '正在生成…' : plan ? '查看提升计划' : '生成提升计划'}
             </Button>
           )}
-          <Button variant="secondary" onClick={() => onExport ? onExport() : exportReportPdf(exportTitle)}>
-            <Download className="h-4 w-4" />
+          <Button type="button" variant="secondary" onClick={() => onExport ? onExport() : exportReportPdf(exportTitle)}>
+            <Download className="h-4 w-4" aria-hidden="true" />
             导出 PDF
           </Button>
           {onClose && (
-            <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface hover:bg-muted" aria-label="关闭报告">
-              <X className="h-5 w-5" />
+            <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface hover:bg-muted" aria-label="关闭报告">
+              <X className="h-5 w-5" aria-hidden="true" />
             </button>
           )}
         </div>
       </header>
 
       {report.reliabilityWarning && (
-        <div className="no-print flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-950" role="status">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+        <div className="no-print flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-950" role="status" aria-live="polite">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
           <div>
             <p className="font-semibold">结果可信度提示</p>
             <p className="mt-1 text-sm leading-6">{report.reliabilityWarning}</p>
@@ -237,7 +237,7 @@ export function ReportDetailView({
           </div>
           <div className="mx-auto grid h-36 w-36 place-items-center rounded-full border-8 border-[var(--border)]/40 bg-white/10 text-center shadow-[0_0_0_12px_rgba(255,255,255,.05)] sm:h-40 sm:w-40 md:mx-0">
             <div>
-              <strong className="text-5xl tracking-tight">{report.totalScore}</strong>
+              <strong className="text-5xl tracking-tight tabular-nums">{report.totalScore}</strong>
               <span className="mt-1 block text-xs text-white/75">综合得分 / 100</span>
             </div>
           </div>
@@ -249,7 +249,7 @@ export function ReportDetailView({
           <Card key={key} className="print-card">
             <p className="text-sm text-muted-foreground">{label}</p>
             <div className="mt-3 flex items-end justify-between">
-              <strong className="text-3xl">{report[key]}</strong>
+              <strong className="text-3xl tabular-nums">{report[key]}</strong>
               <span className="text-xs text-muted-foreground">/ 100</span>
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
@@ -268,7 +268,7 @@ export function ReportDetailView({
               <h2 className="mt-1 text-xl font-bold">能力分布</h2>
             </div>
             <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-              <BarChart3 className="h-4 w-4" />
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
               平均 {average}
             </span>
           </div>
@@ -277,7 +277,7 @@ export function ReportDetailView({
               <div key={key}>
                 <div className="mb-2 flex justify-between text-sm">
                   <span>{label}</span>
-                  <strong>{report[key]}</strong>
+                  <strong className="tabular-nums">{report[key]}</strong>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full bg-gradient-to-r from-[var(--primary)] to-[var(--brand-pink)]" style={{ width: `${report[key]}%` }} />
@@ -293,7 +293,7 @@ export function ReportDetailView({
           <div className="mt-6 space-y-4">
             <article className="rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)]/70 p-4">
               <h3 className="flex items-center gap-2 font-semibold text-[var(--accent)]">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                 优势分析
               </h3>
               <p className="mt-2 text-sm leading-6 text-[var(--foreground)]/80">{report.strengths}</p>
@@ -304,7 +304,7 @@ export function ReportDetailView({
             </article>
             <article className="rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)]/70 p-4">
               <h3 className="flex items-center gap-2 font-semibold text-[var(--accent)]">
-                <TrendingUp className="h-4 w-4" />
+                <TrendingUp className="h-4 w-4" aria-hidden="true" />
                 行动建议
               </h3>
               <p className="mt-2 text-sm leading-6 text-[var(--foreground)]/80">{report.improvementSuggestions}</p>
@@ -321,16 +321,16 @@ export function ReportDetailView({
               <h2 className="mt-1 text-2xl font-bold">7 天提升计划</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">根据能力短板生成专项训练安排。</p>
             </div>
-            <Button variant="secondary" onClick={() => setPlanOpen(false)}>收起计划</Button>
+            <Button type="button" variant="secondary" onClick={() => setPlanOpen(false)}>收起计划</Button>
           </div>
-          {planLoading && <p className="py-8 text-sm text-muted-foreground">正在根据评测结果生成提升计划…</p>}
-          {planError && <p className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{planError}</p>}
+          {planLoading && <p className="py-8 text-sm text-muted-foreground" role="status" aria-live="polite">正在根据评测结果生成提升计划…</p>}
+          {planError && <p className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">{planError}</p>}
           {plan && (
             <div className="mt-6 space-y-6">
               <div className="rounded-[24px] border border-[var(--border)] bg-[linear-gradient(135deg,var(--accent-soft),var(--surface))] p-5">
                 <div className="flex items-start gap-3">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--surface)] text-[var(--accent)] shadow-sm">
-                    <Target className="h-5 w-5" />
+                    <Target className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <div>
                     <p className="text-xs font-semibold tracking-[.12em] text-[var(--accent)]">{plan.generationMethod === 'ai' ? 'AI 生成' : '规则生成'}</p>
@@ -361,7 +361,7 @@ export function ReportDetailView({
                   </article>
                 </div>
                 <div className="rounded-[24px] border border-border p-4">
-                  <h3 className="flex items-center gap-2 font-bold"><CalendarDays className="h-4 w-4" />每日训练安排</h3>
+                  <h3 className="flex items-center gap-2 font-bold"><CalendarDays className="h-4 w-4" aria-hidden="true" />每日训练安排</h3>
                   <div className="mt-4 space-y-3">
                     {plan.dailyPlan.map(day => (
                       <article key={`${day.day}-${day.title}`} className="rounded-2xl bg-muted/50 p-4">

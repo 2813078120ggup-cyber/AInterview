@@ -1,0 +1,92 @@
+groups:
+  - name: ainterview-availability
+    rules:
+      - alert: AInterviewBackendDown
+        expr: up{job="backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: AInterview backend 指标端点不可用
+          description: Prometheus 连续 2 分钟无法抓取 backend 管理端口。
+
+      - alert: AInterviewJudgeWorkerDown
+        expr: up{job="algorithm-judge-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: algorithm-judge-worker
+        annotations:
+          summary: AInterview 判题 Worker 不可用
+          description: Prometheus 连续 2 分钟无法抓取 algorithm-judge-worker 管理端口。
+
+      - alert: AInterviewGatewayDown
+        expr: up{job="cloud-gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: cloud-gateway
+        annotations:
+          summary: AInterview Gateway 指标端点不可用
+          description: Prometheus 连续 2 分钟无法抓取 cloud-gateway 管理端口。
+
+      - alert: AInterviewRegistryDown
+        expr: up{job="cloud-registry"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: cloud-registry
+        annotations:
+          summary: AInterview Eureka 注册中心不可用
+          description: Prometheus 连续 2 分钟无法抓取 cloud-registry 指标端点。
+
+  - name: ainterview-algorithm-judge
+    rules:
+      - alert: AInterviewJudgePendingStalled
+        expr: ai_interview_algorithm_judge_stream_pending{job="algorithm-judge-worker"} > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: algorithm-judge-worker
+        annotations:
+          summary: 算法判题任务持续堆积
+          description: Worker pending 消息连续 10 分钟大于 0，可能存在消费阻塞或执行超时。
+
+      - alert: AInterviewJudgeSystemError
+        expr: increase(ai_interview_algorithm_judge_outcomes_total{job="algorithm-judge-worker",status="system_error"}[5m]) > 0
+        labels:
+          severity: warning
+          service: algorithm-judge-worker
+        annotations:
+          summary: 算法判题出现系统错误
+          description: 最近 5 分钟至少有一条判题任务以 SYSTEM_ERROR 结束。
+
+      - alert: AInterviewJudgeExecutionLatencyHigh
+        expr: (rate(ai_interview_algorithm_judge_execution_duration_seconds_sum{job="algorithm-judge-worker"}[5m]) / clamp_min(rate(ai_interview_algorithm_judge_execution_duration_seconds_count{job="algorithm-judge-worker"}[5m]), 0.001)) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: algorithm-judge-worker
+        annotations:
+          summary: 算法判题平均执行耗时过高
+          description: Worker 最近 5 分钟平均 Docker 执行耗时超过 30 秒，持续 10 分钟。
+
+      - alert: AInterviewJudgeWorkerCircuitOpen
+        expr: resilience4j_circuitbreaker_state{job="backend",name="algorithmJudgeWorker",state="open"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: Backend 到判题 Worker 的熔断器已打开
+          description: algorithmJudgeWorker 熔断器连续 1 分钟处于 OPEN，backend 已快速拒绝同步判题调用。
+
+      - alert: AInterviewJudgeWorkerBulkheadRejected
+        expr: increase(ai_interview_algorithm_judge_worker_client_bulkhead_rejected_total{job="backend"}[5m]) > 0
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: 同步判题调用触发并发隔离拒绝
+          description: 最近 5 分钟至少有一次 backend 到 Worker 的同步调用因并发上限被拒绝。

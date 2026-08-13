@@ -5,9 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
-import { recordAuditLog } from '@/lib/audit-log'
 import { request } from '@/lib/api'
-import { profile } from '@/lib/session'
 
 type User = { id: string; username: string; realName: string; email?: string; phone?: string; status: number; roles: string[]; lastLoginAt?: string; createdAt?: string }
 type Role = { id: string; roleCode: string; roleName: string }
@@ -33,10 +31,10 @@ export function AdminCandidates() {
     setLoading(true)
     try {
       const [page, roleList] = await Promise.all([
-        request<Page<User>>(`/v1/users?pageNo=1&pageSize=100&keyword=${encodeURIComponent(keyword)}${status ? `&status=${status}` : ''}`),
+        request<Page<User>>(`/v1/users?pageNo=1&pageSize=20&roleCode=CANDIDATE&keyword=${encodeURIComponent(keyword)}${status ? `&status=${status}` : ''}`),
         request<Role[]>('/v1/roles'),
       ])
-      setItems(page.records.filter(user => user.roles.includes('CANDIDATE')))
+      setItems(page.records)
       setRoles(roleList)
       setError('')
     } catch (reason) {
@@ -53,7 +51,6 @@ export function AdminCandidates() {
     try {
       const nextStatus = user.status === 1 ? 0 : 1
       await request(`/v1/users/${user.id}/status`, { method: 'PUT', body: JSON.stringify({ status: nextStatus }) })
-      recordAuditLog({ module: '候选人管理', action: nextStatus === 1 ? '启用候选人' : '停用候选人', operator: profile()?.realName ?? '管理员', target: user.realName, detail: `账号 ${user.username} 状态变更为 ${nextStatus === 1 ? '启用' : '停用'}` })
       setItems(previous => previous.map(item => item.id === user.id ? { ...item, status: nextStatus } : item))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '候选人状态更新失败，请稍后重试。')
@@ -72,7 +69,6 @@ export function AdminCandidates() {
     setSaving(true)
     try {
       const user = await request<User>('/v1/users', { method: 'POST', body: JSON.stringify({ ...form, roleIds: [candidate.id] }) })
-      recordAuditLog({ module: '候选人管理', action: '创建候选人', operator: profile()?.realName ?? '管理员', target: user.realName, detail: `创建候选人账号 ${user.username}` })
       setItems(previous => [user, ...previous])
       setOpen(false)
       setForm({ username: '', password: '', realName: '', email: '', phone: '' })
@@ -83,7 +79,7 @@ export function AdminCandidates() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div><p className="text-sm font-semibold text-[var(--accent)]">候选人档案</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">候选人管理</h1><p className="mt-3 max-w-2xl text-muted-foreground">管理候选人账户、状态与面试记录。</p></div>
       <Button onClick={() => setOpen(true)}><UserPlus className="h-4 w-4" />新增候选人</Button>

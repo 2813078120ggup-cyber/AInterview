@@ -2,15 +2,15 @@ package com.tyut.aiinterview.notification;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.tyut.aiinterview.account.CandidateNotificationEvent;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.domain.SiteNotification;
 import com.tyut.aiinterview.mapper.SiteNotificationMapper;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,30 +18,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class SiteNotificationService {
     private final SiteNotificationMapper mapper;
     private final CurrentUser currentUser;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public SiteNotificationService(SiteNotificationMapper mapper, CurrentUser currentUser) {
+    public SiteNotificationService(SiteNotificationMapper mapper, CurrentUser currentUser,
+                                   ApplicationEventPublisher eventPublisher) {
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public void create(Long recipientId, String type, String title, String content,
                        String businessType, Long businessId, String dedupeKey) {
-        if (recipientId == null || Objects.equals(recipientId, currentUser.id())) return;
-        SiteNotification item = new SiteNotification();
-        item.setRecipientId(recipientId);
-        item.setNotificationType(type);
-        item.setTitle(title);
-        item.setContent(content);
-        item.setBusinessType(businessType);
-        item.setBusinessId(businessId);
-        item.setDedupeKey(dedupeKey);
-        item.setCreatedAt(LocalDateTime.now());
-        try {
-            mapper.insert(item);
-        } catch (DuplicateKeyException ignored) {
-            // A retried business request should not duplicate the same notification.
-        }
+        CandidateNotificationEvent candidateEvent = CandidateNotificationEvent.parse(type);
+        if (recipientId == null || candidateEvent == null && Objects.equals(recipientId, currentUser.id())) return;
+        eventPublisher.publishEvent(new CandidateNotificationRequested(recipientId, type, candidateEvent, title, content,
+                businessType, businessId, dedupeKey));
     }
 
     public long unreadCount() {

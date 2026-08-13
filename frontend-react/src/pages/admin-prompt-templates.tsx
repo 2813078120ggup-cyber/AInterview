@@ -153,7 +153,7 @@ export function AdminPromptTemplates() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div>
         <p className="text-sm font-semibold text-[var(--accent)]">提示词配置</p>

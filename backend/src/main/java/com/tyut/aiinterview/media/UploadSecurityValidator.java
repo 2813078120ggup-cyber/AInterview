@@ -43,7 +43,27 @@ public class UploadSecurityValidator {
         return new ValidatedUpload(contentType, extension, safeOriginalName(file.getOriginalFilename()));
     }
 
+    public ValidatedAvatar validateAvatar(MultipartFile file, long maxBytes) {
+        validateCommon(file, maxBytes);
+        String contentType = normalizedContentType(file);
+        String extension = extension(file.getOriginalFilename());
+        byte[] header = readHeader(file);
+        boolean valid = switch (contentType) {
+            case "image/jpeg" -> ("jpg".equals(extension) || "jpeg".equals(extension)) && jpeg(header);
+            case "image/png" -> "png".equals(extension) && png(header);
+            case "image/webp" -> "webp".equals(extension) && webp(header);
+            default -> false;
+        };
+        if (!valid) throw BusinessException.badRequest("头像必须是扩展名、声明 MIME 与文件签名一致的 JPEG、PNG 或 WebP 图片");
+        scan(file);
+        return new ValidatedAvatar(contentType, extension, safeOriginalName(file.getOriginalFilename()));
+    }
+
     public void validateResume(MultipartFile file) {
+        validateResumeUpload(file);
+    }
+
+    public ValidatedResume validateResumeUpload(MultipartFile file) {
         validateCommon(file);
         String extension = extension(file.getOriginalFilename());
         byte[] header = readHeader(file);
@@ -55,11 +75,16 @@ public class UploadSecurityValidator {
         };
         if (!valid) throw BusinessException.badRequest("简历文件内容与扩展名不匹配，或文件格式不受支持");
         scan(file);
+        return new ValidatedResume(resumeContentType(extension), extension, safeOriginalName(file.getOriginalFilename()));
     }
 
     private void validateCommon(MultipartFile file) {
+        validateCommon(file, storageProperties.maxUploadBytes());
+    }
+
+    private void validateCommon(MultipartFile file, long maxBytes) {
         if (file == null || file.isEmpty()) throw BusinessException.badRequest("上传文件不能为空");
-        if (file.getSize() > storageProperties.maxUploadBytes()) throw BusinessException.badRequest("上传文件超过大小限制");
+        if (file.getSize() > maxBytes) throw BusinessException.badRequest("上传文件超过大小限制");
     }
 
     private String normalizedContentType(MultipartFile file) {
@@ -119,6 +144,16 @@ public class UploadSecurityValidator {
         return index < 0 ? "" : name.substring(index + 1).replaceAll("[^a-z0-9]", "");
     }
 
+    private String resumeContentType(String extension) {
+        return switch (extension) {
+            case "pdf" -> "application/pdf";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "md" -> "text/markdown";
+            case "txt" -> "text/plain";
+            default -> throw BusinessException.badRequest("仅支持 PDF、DOCX、TXT 或 Markdown 简历");
+        };
+    }
+
     private String checked(boolean condition, String message, String extension) {
         if (!condition) throw BusinessException.badRequest(message);
         return extension;
@@ -128,6 +163,7 @@ public class UploadSecurityValidator {
     private boolean jpeg(byte[] bytes) { return startsWith(bytes, 0xff, 0xd8, 0xff); }
     private boolean png(byte[] bytes) { return startsWith(bytes, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a); }
     private boolean gif(byte[] bytes) { return startsWith(bytes, "GIF87a") || startsWith(bytes, "GIF89a"); }
+    private boolean webp(byte[] bytes) { return startsWith(bytes, "RIFF") && bytes.length >= 12 && startsWith(bytes, 8, "WEBP"); }
     private boolean wav(byte[] bytes) { return startsWith(bytes, "RIFF") && bytes.length >= 12 && startsWith(bytes, 8, "WAVE"); }
     private boolean webm(byte[] bytes) { return startsWith(bytes, 0x1a, 0x45, 0xdf, 0xa3); }
     private boolean mp4(byte[] bytes) { return bytes.length >= 8 && startsWith(bytes, 4, "ftyp"); }
@@ -139,4 +175,6 @@ public class UploadSecurityValidator {
     private boolean startsWith(byte[] bytes, int offset, String signature) { byte[] value = signature.getBytes(StandardCharsets.US_ASCII); if (bytes.length < offset + value.length) return false; for (int index = 0; index < value.length; index++) if (bytes[offset + index] != value[index]) return false; return true; }
 
     public record ValidatedUpload(String contentType, String extension, String originalName) { }
+    public record ValidatedResume(String contentType, String extension, String originalName) { }
+    public record ValidatedAvatar(String contentType, String extension, String originalName) { }
 }

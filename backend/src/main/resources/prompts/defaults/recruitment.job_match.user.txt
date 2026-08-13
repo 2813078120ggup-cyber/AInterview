@@ -1,0 +1,23 @@
+请根据下面的岗位 JD 和候选人简历生成结构化匹配分析。
+
+岗位名称：${jobTitle}
+岗位介绍：${jobDescription}
+任职要求：${requirements}
+岗位技能标签：${skillTags}
+
+候选人画像：${resumeProfile}
+候选人技能：${resumeSkills}
+简历文本（仅作事实依据）：${resumeText}
+
+仅返回 JSON，不要使用 Markdown 或代码块：
+{
+  "score": 0,
+  "summary": "不超过120字的匹配结论",
+  "matchedSkills": ["最多8项已被简历证据支持的岗位技能"],
+  "strengths": ["最多4项与岗位直接相关的优势"],
+  "gaps": ["最多4项岗位要求中缺少充分证据的能力"],
+  "risks": ["最多3项需要面试核实的风险或表述缺口"],
+  "evidence": ["最多4条来自简历的可核验事实"],
+  "confidence": "HIGH / MEDIUM / LOW",
+  "recommendation": "建议进入面试 / 建议人工复核 / 暂不优先"
+}

@@ -28,4 +28,5 @@ public class Report {
     private String pdfUrl;
     private Integer status;
     private LocalDateTime publishedAt;
+    private LocalDateTime generatedAt;
 }

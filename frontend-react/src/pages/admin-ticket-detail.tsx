@@ -84,10 +84,10 @@ export function AdminTicketDetail() {
   }
 
   if (busy) return <TicketLoading />
-  if (!detail) return <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6 lg:p-10"><Link to="/admin/tickets" className="inline-flex h-9 items-center gap-1 rounded-full px-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"><ArrowLeft className="h-4 w-4" />返回工单列表</Link><div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error || '工单不存在'}</div></div>
+  if (!detail) return <div className="space-y-4"><Link to="/admin/tickets" className="inline-flex h-9 items-center gap-1 rounded-full px-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"><ArrowLeft className="h-4 w-4" />返回工单列表</Link><div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error || '工单不存在'}</div></div>
   const closed = detail.ticket.status === 'CLOSED'
   const assigneeOptions = [{ value: '', label: '暂未分配' }, ...assignees.map(item => ({ value: item.id, label: `${item.realName}（${item.username}）` }))]
-  return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <Link to="/admin/tickets" className="inline-flex h-9 items-center gap-1 rounded-full px-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"><ArrowLeft className="h-4 w-4" />返回工单队列</Link>
     {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">

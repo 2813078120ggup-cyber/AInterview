@@ -113,12 +113,12 @@ export function AdminAiGenerations() {
   const totalPages = Math.max(1, Math.ceil(page.total / page.pageSize))
   const successRate = summary.total ? Math.round(summary.success * 1000 / summary.total) / 10 : 0
 
-  return <div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-10">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="text-sm font-semibold text-[var(--accent)]">AI 调用监控</p>
-        <h1 className="mt-2 text-3xl font-bold sm:text-4xl">AI 调用审计</h1>
-        <p className="mt-3 max-w-3xl text-muted-foreground">查看模型、提示词版本、耗时、Token 用量与失败原因。</p>
+        <p className="text-sm font-semibold text-[var(--accent)]">模型调用记录</p>
+        <h1 className="mt-2 text-3xl font-bold sm:text-4xl">调用审计</h1>
+        <p className="mt-3 max-w-3xl text-muted-foreground">查看模型服务、规则版本、耗时、Token 用量与失败原因。</p>
       </div>
       <Button type="button" variant="secondary" className="h-9 px-4" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新记录</Button>
     </header>

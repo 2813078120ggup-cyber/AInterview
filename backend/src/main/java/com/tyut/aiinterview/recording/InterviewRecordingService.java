@@ -17,10 +17,12 @@ import com.tyut.aiinterview.mapper.MediaFileMapper;
 import com.tyut.aiinterview.media.LocalObjectStorage;
 import com.tyut.aiinterview.media.MediaDtos;
 import com.tyut.aiinterview.media.MediaService;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,6 +43,7 @@ public class InterviewRecordingService {
     private final MediaService mediaService;
     private final LocalObjectStorage storage;
     private final CurrentUser currentUser;
+    private CompanyAccessService companyAccess;
 
     public InterviewRecordingService(InterviewRecordingMapper recordingMapper,
                                      InterviewRecordingSegmentMapper segmentMapper,
@@ -88,7 +91,14 @@ public class InterviewRecordingService {
 
     public RecordingDtos.RecordingView get(Long interviewId) {
         Interview interview = requireInterview(interviewId);
-        requireParticipant(interview);
+        requireReadAccess(interview);
+        InterviewRecording recording = find(interviewId);
+        return recording == null ? null : toView(recording);
+    }
+
+    /** Company-scoped read path used by HR report review. */
+    public RecordingDtos.RecordingView companyView(Long interviewId) {
+        requireCompanyReadAccess(interviewId);
         InterviewRecording recording = find(interviewId);
         return recording == null ? null : toView(recording);
     }
@@ -170,7 +180,7 @@ public class InterviewRecordingService {
 
     public RecordingDtos.RecordingContent content(Long interviewId, Long segmentId) {
         Interview interview = requireInterview(interviewId);
-        requireParticipant(interview);
+        requireReadAccess(interview);
         InterviewRecording recording = requireRecording(interviewId);
         InterviewRecordingSegment segment = segmentMapper.selectById(segmentId);
         if (segment == null || !recording.getId().equals(segment.getRecordingId())) {
@@ -244,6 +254,25 @@ public class InterviewRecordingService {
         Long userId = currentUser.id();
         if (!(userId.equals(interview.getCandidateId()) || userId.equals(interview.getInterviewerId())
                 || currentUser.hasRole("ADMIN"))) throw BusinessException.forbidden("无权查看本场面试录制");
+    }
+
+    private void requireReadAccess(Interview interview) {
+        if (currentUser.hasCompanyRole()) {
+            requireCompanyReadAccess(interview.getId());
+            return;
+        }
+        requireParticipant(interview);
+    }
+
+    private void requireCompanyReadAccess(Long interviewId) {
+        if (companyAccess == null) throw BusinessException.forbidden("企业录制访问未配置");
+        companyAccess.requireAnyPermission("interview:review", "report:read");
+        companyAccess.requireAuthorizedInterview(interviewId);
+    }
+
+    @Autowired
+    public void setCompanyAccessService(CompanyAccessService companyAccess) {
+        this.companyAccess = companyAccess;
     }
 
     private String trimToNull(String value) {

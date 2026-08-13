@@ -15,6 +15,7 @@ class AiInterviewApplicationContextTest {
     @Autowired
     private PromptTemplateService promptTemplates;
 
+
     @Test
     void applicationContextLoads() {
     }
@@ -28,4 +29,5 @@ class AiInterviewApplicationContextTest {
         assertFalse(prompt.userPrompt().contains("${"));
         assertTrue(prompt.userPrompt().contains("不必每次都先表扬"));
     }
+
 }

@@ -12,7 +12,8 @@ public class JwtProperties {
     public static final String EXAMPLE_JWT_SECRET = "replace-with-a-random-jwt-secret-at-least-32-characters";
 
     private String jwtSecret;
-    private long tokenExpireHours = 24;
+    /** Access tokens remain short-lived; refresh tokens provide the long session lifetime. */
+    private long tokenExpireMinutes = 20;
     private long refreshTokenExpireDays = 14;
     private boolean requireStrongJwtSecret = true;
 

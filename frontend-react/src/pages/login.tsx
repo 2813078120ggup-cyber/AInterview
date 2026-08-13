@@ -1,3 +1,4 @@
+import * as Dialog from '@radix-ui/react-dialog'
 import {
   motion,
   useMotionTemplate,
@@ -16,15 +17,18 @@ import {
   EyeOff,
   FileChartColumn,
   LockKeyhole,
+  Loader2,
   Mail,
   MessageSquareMore,
   Mic,
   Phone,
   RotateCcw,
+  Send,
   ShieldCheck,
   UserRound,
   Video,
   Waves,
+  X,
 } from 'lucide-react'
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -35,7 +39,22 @@ import { establish } from '@/lib/session'
 type Login = {
   token: string
   refreshToken: string
-  user: { id: string; username: string; realName: string; roles: string[] }
+  user: { id: string; username: string; realName: string; roles: string[]; companyId?: string }
+}
+
+type PasswordResetCodeResponse = {
+  accepted: boolean
+  cooldownSeconds: number
+  expiresInSeconds: number
+  message: string
+}
+
+type PasswordResetResponse = { sessionBehavior: string }
+
+function workspaceFor(roles: string[]) {
+  if (roles.includes('ADMIN')) return '/admin/interviews'
+  if (roles.includes('COMPANY_ADMIN')) return '/company'
+  return '/candidate/interviews'
 }
 
 const fieldClass =
@@ -50,7 +69,7 @@ const features = [
 const usernamePattern = /^[A-Za-z][A-Za-z0-9_]{3,31}$/
 const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d)[!-~]{8,64}$/
 const usernameRule = '4–32 位，英文开头，仅限英文、数字和下划线'
-const passwordRule = '8–64 位，须包含字母和数字；不支持中文或空格'
+const passwordRule = '8–64 位，须包含至少一个英文字母和一个数字；仅支持半角可打印字符，不允许中文或空格'
 const verificationCodeCooldownSeconds = 60
 const registerCodeCooldownKey = 'interviewos_register_code_cooldown_until'
 const loginCodeCooldownKey = 'interviewos_login_code_cooldown_until'
@@ -121,9 +140,43 @@ export function LoginPage() {
   const [loginChannel, setLoginChannel] = useState<'sms' | 'email'>('sms')
   const [loginTarget, setLoginTarget] = useState('')
   const [loginCode, setLoginCode] = useState('')
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetChannel, setResetChannel] = useState<'sms' | 'email'>('sms')
+  const [resetTarget, setResetTarget] = useState('')
+  const [resetCode, setResetCode] = useState('')
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('')
+  const [resetPasswordVisible, setResetPasswordVisible] = useState(false)
+  const [resetConfirmVisible, setResetConfirmVisible] = useState(false)
+  const [resetSending, setResetSending] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetStatus, setResetStatus] = useState('')
+  const [resetCompleted, setResetCompleted] = useState(false)
+  const [resetCooldownUntil, setResetCooldownUntil] = useState(0)
+  const [resetNow, setResetNow] = useState(() => Date.now())
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible')
   const [form, setForm] = useState({ username: '', password: '', realName: '', email: '', phone: '', verificationCode: '' })
   const registerCooldown = usePersistentCooldown(registerCodeCooldownKey)
   const loginCooldown = usePersistentCooldown(loginCodeCooldownKey)
+  const resetCooldown = Math.max(0, Math.ceil((resetCooldownUntil - resetNow) / 1000))
+
+  useEffect(() => {
+    function updateVisibility() {
+      setPageVisible(document.visibilityState === 'visible')
+      if (document.visibilityState === 'visible') setResetNow(Date.now())
+    }
+    document.addEventListener('visibilitychange', updateVisibility)
+    return () => document.removeEventListener('visibilitychange', updateVisibility)
+  }, [])
+
+  useEffect(() => {
+    if (!resetOpen || !pageVisible || resetCooldownUntil <= Date.now()) return
+    function tick() { setResetNow(Date.now()) }
+    tick()
+    const timer = window.setInterval(tick, 500)
+    return () => window.clearInterval(timer)
+  }, [pageVisible, resetOpen, resetCooldownUntil])
 
   const pointerX = useMotionValue(50)
   const pointerY = useMotionValue(50)
@@ -178,7 +231,7 @@ export function LoginPage() {
           body: JSON.stringify({ channel: loginChannel, target, verificationCode: loginCode.trim() }),
         })
         establish(result.token, result.refreshToken, result.user)
-        nav(result.user.roles.includes('ADMIN') ? '/admin/interviews' : '/candidate/interviews', { replace: true })
+        nav(workspaceFor(result.user.roles), { replace: true })
         return
       }
       const result = await request<Login>('/v1/auth/login', {
@@ -186,7 +239,7 @@ export function LoginPage() {
         body: JSON.stringify({ username: form.username, password: form.password }),
       })
       establish(result.token, result.refreshToken, result.user)
-      nav(result.user.roles.includes('ADMIN') ? '/admin/interviews' : '/candidate/interviews', { replace: true })
+      nav(workspaceFor(result.user.roles), { replace: true })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '登录失败，请检查账号信息。'
       if (mode === 'login' && loginMethod === 'code' && message.includes('还未注册')) {
@@ -248,6 +301,96 @@ export function LoginPage() {
       }
     } finally {
       setSendingCode(false)
+    }
+  }
+
+  function openPasswordReset() {
+    setResetError('')
+    setResetStatus('')
+    setResetCompleted(false)
+    if (loginMethod === 'code' && loginTarget.trim()) {
+      setResetChannel(loginChannel)
+      setResetTarget(loginTarget.trim())
+    }
+    setResetOpen(true)
+  }
+
+  function resetTargetIsValid() {
+    const target = resetTarget.trim()
+    if (resetChannel === 'sms' && !/^1\d{10}$/.test(target)) {
+      setResetError('请输入正确的 11 位手机号。')
+      return false
+    }
+    if (resetChannel === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) {
+      setResetError('请输入正确的邮箱。')
+      return false
+    }
+    return true
+  }
+
+  async function sendPasswordResetCode() {
+    setResetError('')
+    setResetStatus('')
+    if (!resetTargetIsValid()) return
+    setResetSending(true)
+    try {
+      const result = await request<PasswordResetCodeResponse>('/v1/auth/password/reset/code', {
+        method: 'POST',
+        body: JSON.stringify({ channel: resetChannel, target: resetTarget.trim() }),
+      })
+      setResetStatus(result.message)
+      setResetCooldownUntil(Date.now() + result.cooldownSeconds * 1000)
+      setResetNow(Date.now())
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : '验证码发送失败，请稍后重试。'
+      if (message.includes('发送过于频繁')) {
+        setResetCooldownUntil(Date.now() + verificationCodeCooldownSeconds * 1000)
+        setResetNow(Date.now())
+      }
+      setResetError(message)
+    } finally {
+      setResetSending(false)
+    }
+  }
+
+  async function resetAccountPassword(event: FormEvent) {
+    event.preventDefault()
+    setResetError('')
+    setResetStatus('')
+    if (!resetTargetIsValid()) return
+    if (!resetCode.trim()) {
+      setResetError('请输入验证码。')
+      return
+    }
+    if (!passwordPattern.test(resetPassword)) {
+      setResetError(`新密码不符合规则：${passwordRule}`)
+      return
+    }
+    if (resetPassword !== resetConfirmPassword) {
+      setResetError('两次输入的新密码不一致。')
+      return
+    }
+    setResetBusy(true)
+    try {
+      const result = await request<PasswordResetResponse>('/v1/auth/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({
+          channel: resetChannel,
+          target: resetTarget.trim(),
+          verificationCode: resetCode.trim(),
+          newPassword: resetPassword,
+        }),
+      })
+      setResetCode('')
+      setResetPassword('')
+      setResetConfirmPassword('')
+      setForm(previous => ({ ...previous, password: '' }))
+      setResetStatus(result.sessionBehavior || '密码已重置，请使用新密码重新登录。')
+      setResetCompleted(true)
+    } catch (reason) {
+      setResetError(reason instanceof Error ? reason.message : '密码重置失败，请检查验证码后重试。')
+    } finally {
+      setResetBusy(false)
     }
   }
 
@@ -547,6 +690,7 @@ export function LoginPage() {
                   </div>
                   {mode === 'register' && <p className="mt-2 text-xs font-normal leading-5 text-muted-foreground">{passwordRule}</p>}
                 </label>
+                {mode === 'login' && loginMethod === 'password' && <div className="-mt-2 flex justify-end"><button type="button" onClick={openPasswordReset} className="min-h-10 rounded-xl px-2 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">忘记密码？</button></div>}
                 </>}
 
                 {mode === 'login' && loginMethod === 'code' && <>
@@ -649,6 +793,34 @@ export function LoginPage() {
           </motion.form>
         </section>
       </section>
+      <PasswordResetDialog open={resetOpen} channel={resetChannel} target={resetTarget} code={resetCode} password={resetPassword} confirmPassword={resetConfirmPassword} passwordVisible={resetPasswordVisible} confirmVisible={resetConfirmVisible} sending={resetSending} busy={resetBusy} cooldown={resetCooldown} error={resetError} status={resetStatus} completed={resetCompleted} onOpenChange={setResetOpen} onChannelChange={value => { setResetChannel(value); setResetError(''); setResetStatus('') }} onTargetChange={setResetTarget} onCodeChange={setResetCode} onPasswordChange={setResetPassword} onConfirmPasswordChange={setResetConfirmPassword} onTogglePassword={() => setResetPasswordVisible(value => !value)} onToggleConfirm={() => setResetConfirmVisible(value => !value)} onSendCode={() => void sendPasswordResetCode()} onSubmit={resetAccountPassword} />
     </main>
   )
+}
+
+function PasswordResetDialog({ open, channel, target, code, password, confirmPassword, passwordVisible, confirmVisible, sending, busy, cooldown, error, status, completed, onOpenChange, onChannelChange, onTargetChange, onCodeChange, onPasswordChange, onConfirmPasswordChange, onTogglePassword, onToggleConfirm, onSendCode, onSubmit }: { open: boolean; channel: 'sms' | 'email'; target: string; code: string; password: string; confirmPassword: string; passwordVisible: boolean; confirmVisible: boolean; sending: boolean; busy: boolean; cooldown: number; error: string; status: string; completed: boolean; onOpenChange: (open: boolean) => void; onChannelChange: (channel: 'sms' | 'email') => void; onTargetChange: (value: string) => void; onCodeChange: (value: string) => void; onPasswordChange: (value: string) => void; onConfirmPasswordChange: (value: string) => void; onTogglePassword: () => void; onToggleConfirm: () => void; onSendCode: () => void; onSubmit: (event: FormEvent) => void }) {
+  const disabled = sending || busy
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm" />
+      <Dialog.Content className="fixed inset-x-3 bottom-3 z-[101] mx-auto max-h-[calc(100dvh-24px)] max-w-lg overflow-y-auto rounded-[24px] border border-border bg-surface p-5 shadow-2xl focus:outline-none sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:p-7">
+        <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-[var(--accent)]">账户找回</p><Dialog.Title className="mt-1 text-2xl font-bold">重置登录密码</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">仅已验证的手机号或邮箱可接收密码重置验证码。提交后全部设备会话都会失效。</Dialog.Description></div><Dialog.Close asChild><Button type="button" variant="ghost" className="h-10 w-10 shrink-0 rounded-full px-0" aria-label="关闭密码重置"><X className="h-5 w-5" /></Button></Dialog.Close></div>
+        {status && <p role="status" className="mt-5 rounded-2xl border border-[var(--success-foreground)]/30 bg-[var(--success)] px-4 py-3 text-sm leading-6 text-[var(--success-foreground)]">{status}</p>}
+        {error && <p role="alert" className="mt-5 rounded-2xl border border-[var(--danger-foreground)]/30 bg-[var(--danger)] px-4 py-3 text-sm leading-6 text-[var(--danger-foreground)]">{error}</p>}
+        {completed ? <div className="mt-6"><p className="text-sm leading-6 text-muted-foreground">本次重置不会自动登录。请关闭窗口，使用新密码重新登录。</p><div className="mt-5 flex justify-end"><Dialog.Close asChild><Button type="button">返回登录</Button></Dialog.Close></div></div> : <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] p-1 text-sm font-semibold">{(['sms', 'email'] as const).map(item => <button key={item} type="button" onClick={() => onChannelChange(item)} disabled={disabled} className={`h-10 rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] ${channel === item ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm' : 'text-muted-foreground hover:bg-surface hover:text-foreground'}`}>{item === 'sms' ? '手机找回' : '邮箱找回'}</button>)}</div>
+          <label className="block text-sm font-semibold" htmlFor="reset-target">{channel === 'sms' ? '已验证手机号' : '已验证邮箱'}<span className="relative block">{channel === 'sms' ? <Phone className="pointer-events-none absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" /> : <Mail className="pointer-events-none absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />}<input id="reset-target" type={channel === 'email' ? 'email' : 'tel'} value={target} onChange={event => onTargetChange(event.target.value)} className={`${fieldClass} pl-11`} autoComplete={channel === 'email' ? 'email' : 'tel'} disabled={disabled} placeholder={channel === 'sms' ? '请输入手机号' : 'name@example.com'} required /></span></label>
+          <label className="block text-sm font-semibold" htmlFor="reset-code">验证码<span className="mt-2 flex gap-2"><input id="reset-code" value={code} onChange={event => onCodeChange(event.target.value)} className="h-12 min-w-0 flex-1 rounded-2xl border border-border bg-background px-4 text-sm font-normal outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20" maxLength={6} inputMode="numeric" autoComplete="one-time-code" disabled={disabled} required /><Button type="button" variant="secondary" className="min-w-28 shrink-0 px-4" onClick={onSendCode} disabled={disabled || cooldown > 0}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? '发送中' : cooldown > 0 ? `${cooldown}s` : '发送验证码'}</Button></span></label>
+          <ResetPasswordField id="reset-password" label="新密码" value={password} visible={passwordVisible} disabled={disabled} onChange={onPasswordChange} onToggle={onTogglePassword} describedBy="reset-password-rule" />
+          <p id="reset-password-rule" className="-mt-2 text-xs leading-5 text-muted-foreground">{passwordRule}</p>
+          <ResetPasswordField id="reset-confirm-password" label="确认新密码" value={confirmPassword} visible={confirmVisible} disabled={disabled} onChange={onConfirmPasswordChange} onToggle={onToggleConfirm} />
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end"><Dialog.Close asChild><Button type="button" variant="secondary" disabled={disabled}>取消</Button></Dialog.Close><Button type="submit" disabled={disabled || !target.trim() || !code.trim() || !password || !confirmPassword}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}{busy ? '正在重置…' : '重置密码'}</Button></div>
+        </form>}
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>
+}
+
+function ResetPasswordField({ id, label, value, visible, disabled, describedBy, onChange, onToggle }: { id: string; label: string; value: string; visible: boolean; disabled: boolean; describedBy?: string; onChange: (value: string) => void; onToggle: () => void }) {
+  return <div><label className="block text-sm font-semibold" htmlFor={id}>{label}</label><div className="relative"><input id={id} type={visible ? 'text' : 'password'} value={value} onChange={event => onChange(event.target.value)} className={`${fieldClass} pr-12`} minLength={8} maxLength={64} autoComplete="new-password" disabled={disabled} aria-describedby={describedBy} required /><button type="button" onClick={onToggle} disabled={disabled} className="absolute right-2 top-[18px] grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]" aria-label={visible ? `隐藏${label}` : `显示${label}`}>{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
 }

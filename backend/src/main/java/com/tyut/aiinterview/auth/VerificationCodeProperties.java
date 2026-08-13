@@ -9,6 +9,10 @@ import org.springframework.stereotype.Component;
 public class VerificationCodeProperties {
     private Duration ttl = Duration.ofMinutes(5);
     private Duration cooldown = Duration.ofSeconds(60);
+    private int maxDailyChangeSends = 10;
+    private int maxChangeVerifyFailures = 5;
+    private int maxDailyPasswordResetSends = 10;
+    private int maxPasswordResetVerifyFailures = 5;
     private String smsHost = "https://dfsns.market.alicloudapi.com";
     private String smsPath = "/data/send_sms";
     private String smsAppCode;
@@ -20,6 +24,14 @@ public class VerificationCodeProperties {
     public void setTtl(Duration ttl) { this.ttl = ttl; }
     public Duration getCooldown() { return cooldown; }
     public void setCooldown(Duration cooldown) { this.cooldown = cooldown; }
+    public int getMaxDailyChangeSends() { return maxDailyChangeSends; }
+    public void setMaxDailyChangeSends(int maxDailyChangeSends) { this.maxDailyChangeSends = maxDailyChangeSends; }
+    public int getMaxChangeVerifyFailures() { return maxChangeVerifyFailures; }
+    public void setMaxChangeVerifyFailures(int maxChangeVerifyFailures) { this.maxChangeVerifyFailures = maxChangeVerifyFailures; }
+    public int getMaxDailyPasswordResetSends() { return maxDailyPasswordResetSends; }
+    public void setMaxDailyPasswordResetSends(int maxDailyPasswordResetSends) { this.maxDailyPasswordResetSends = maxDailyPasswordResetSends; }
+    public int getMaxPasswordResetVerifyFailures() { return maxPasswordResetVerifyFailures; }
+    public void setMaxPasswordResetVerifyFailures(int maxPasswordResetVerifyFailures) { this.maxPasswordResetVerifyFailures = maxPasswordResetVerifyFailures; }
     public String getSmsHost() { return smsHost; }
     public void setSmsHost(String smsHost) { this.smsHost = smsHost; }
     public String getSmsPath() { return smsPath; }

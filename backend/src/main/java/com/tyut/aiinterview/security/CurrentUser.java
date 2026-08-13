@@ -16,5 +16,10 @@ public class CurrentUser {
     }
 
     public Long id() { return require().getId(); }
+    public String sessionId() { return require().getSessionId(); }
     public boolean hasRole(String role) { return require().hasRole(role); }
+    public boolean hasPermission(String permission) { return require().hasPermission(permission); }
+    public boolean hasCompanyRole() {
+        return hasRole("COMPANY_ADMIN") || hasRole("COMPANY_RECRUITER") || hasRole("COMPANY_INTERVIEWER");
+    }
 }

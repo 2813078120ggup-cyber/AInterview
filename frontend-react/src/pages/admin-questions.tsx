@@ -6,9 +6,7 @@ import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
-import { recordAuditLog } from '@/lib/audit-log'
 import { request } from '@/lib/api'
-import { profile } from '@/lib/session'
 
 type Bank = { id: string; bankCode: string; name: string; description?: string }
 type Question = {
@@ -146,23 +144,9 @@ export function AdminQuestions() {
       if (editing) {
         const item = await request<Question>(`/v1/question-banks/${id}/questions/${editing.id}`, { method: 'PUT', body: JSON.stringify(form) })
         setItems(previous => previous.map(question => question.id === item.id ? item : question))
-        recordAuditLog({
-          module: '题库管理',
-          action: '修改题目',
-          operator: profile()?.realName ?? '管理员',
-          target: bank?.name ?? id,
-          detail: `修改题目：${item.content.slice(0, 40)}`,
-        })
       } else {
         const item = await request<Question>(`/v1/question-banks/${id}/questions`, { method: 'POST', body: JSON.stringify(form) })
         setItems(previous => [item, ...previous])
-        recordAuditLog({
-          module: '题库管理',
-          action: '新增题目',
-          operator: profile()?.realName ?? '管理员',
-          target: bank?.name ?? id,
-          detail: `新增题目：${item.content.slice(0, 40)}`,
-        })
       }
       setOpen(false)
       setEditing(null)
@@ -180,13 +164,6 @@ export function AdminQuestions() {
     try {
       await request(`/v1/question-banks/${id}/questions/${question.id}`, { method: 'DELETE' })
       setItems(previous => previous.filter(item => item.id !== question.id))
-      recordAuditLog({
-        module: '题库管理',
-        action: '删除题目',
-        operator: profile()?.realName ?? '管理员',
-        target: bank?.name ?? id,
-        detail: `删除题目：${question.content.slice(0, 40)}`,
-      })
       setError('')
       setDeleteTarget(undefined)
     } catch (reason) {
@@ -196,7 +173,7 @@ export function AdminQuestions() {
     }
   }
 
-  return <div className="mx-auto max-w-7xl p-4 sm:p-5 lg:p-9">
+  return <div className="space-y-6">
     <header className="flex flex-col gap-4 rounded-[24px] border border-border bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <Button type="button" variant="ghost" className="mb-2 -ml-3 h-9 px-3 text-sm text-muted-foreground hover:text-foreground" onClick={() => nav('/admin/question-banks')}><ArrowLeft className="h-4 w-4" />返回题库</Button>

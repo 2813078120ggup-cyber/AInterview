@@ -6,7 +6,10 @@ server:
 
 spring:
   application:
-    name: ai-interview-platform
+    name: ${SPRING_APPLICATION_NAME:backend-core}
+  cloud:
+    discovery:
+      enabled: ${SPRING_CLOUD_DISCOVERY_ENABLED:false}
   servlet:
     multipart:
       max-file-size: ${MEDIA_MAX_UPLOAD_SIZE:100MB}
@@ -49,10 +52,24 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:false}
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:false}
+  instance:
+    prefer-ip-address: ${EUREKA_INSTANCE_PREFER_IP_ADDRESS:true}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${EUREKA_INSTANCE_ID:${spring.application.name}:${server.port}}
+    metadata-map:
+      management.port: ${MANAGEMENT_PORT:8081}
+
 app:
   security:
     jwt-secret: ${JWT_SECRET:change-this-secret-to-a-base64-encoded-32-byte-value}
-    token-expire-hours: ${JWT_EXPIRE_HOURS:24}
+    token-expire-minutes: ${JWT_EXPIRE_MINUTES:20}
     refresh-token-expire-days: ${REFRESH_TOKEN_EXPIRE_DAYS:14}
     require-strong-jwt-secret: ${APP_REQUIRE_STRONG_JWT_SECRET:false}
   ratelimit:
@@ -65,25 +82,34 @@ app:
   algorithm:
     judge:
       enabled: ${ALGORITHM_JUDGE_ENABLED:true}
-      consumer-enabled: ${ALGORITHM_JUDGE_CONSUMER_ENABLED:true}
-      runner-image: ${ALGORITHM_JUDGE_RUNNER_IMAGE:ai-java17-runner:2.0}
-      docker-host: ${ALGORITHM_JUDGE_DOCKER_HOST:}
-      output-limit-bytes: ${ALGORITHM_JUDGE_OUTPUT_LIMIT_BYTES:8388608}
       source-limit-chars: ${ALGORITHM_JUDGE_SOURCE_LIMIT_CHARS:100000}
-      max-test-cases: ${ALGORITHM_JUDGE_MAX_TEST_CASES:50}
-      compile-timeout-seconds: ${ALGORITHM_JUDGE_COMPILE_TIMEOUT_SECONDS:30}
-      cpu-count: ${ALGORITHM_JUDGE_CPU_COUNT:1}
+      worker-base-url: ${ALGORITHM_JUDGE_WORKER_BASE_URL:http://127.0.0.1:8084/api}
+      worker-service-id: ${ALGORITHM_JUDGE_WORKER_SERVICE_ID:algorithm-judge-worker}
+      worker-discovery-enabled: ${ALGORITHM_JUDGE_WORKER_DISCOVERY_ENABLED:false}
+      worker-service-path: ${ALGORITHM_JUDGE_WORKER_SERVICE_PATH:/api}
+      worker-connect-timeout-ms: ${ALGORITHM_JUDGE_WORKER_CONNECT_TIMEOUT_MS:2000}
+      worker-read-timeout-ms: ${ALGORITHM_JUDGE_WORKER_READ_TIMEOUT_MS:30000}
+      worker-circuit-breaker-name: ${ALGORITHM_JUDGE_WORKER_CIRCUIT_BREAKER_NAME:algorithmJudgeWorker}
+      worker-bulkhead-max-concurrent: ${ALGORITHM_JUDGE_WORKER_BULKHEAD_MAX_CONCURRENT:8}
+      worker-bulkhead-max-wait-ms: ${ALGORITHM_JUDGE_WORKER_BULKHEAD_MAX_WAIT_MS:0}
+      internal-token: ${ALGORITHM_JUDGE_INTERNAL_TOKEN:}
+      internal-token-file: ${ALGORITHM_JUDGE_INTERNAL_TOKEN_FILE:/run/secrets/algorithm-judge-internal-token}
+      require-internal-token: ${ALGORITHM_JUDGE_REQUIRE_INTERNAL_TOKEN:false}
   interview:
     start-window-minutes: ${INTERVIEW_START_WINDOW_MINUTES:15}
   storage:
     root-directory: ${MEDIA_STORAGE_ROOT:./data/media}
     max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:104857600}
+  recruitment:
+    resume:
+      max-upload-bytes: ${RECRUITMENT_RESUME_MAX_UPLOAD_BYTES:10485760}
   upload-security:
     # Production should set CLAMAV_REQUIRED=true and point this to a private ClamAV service.
     clamav-required: ${CLAMAV_REQUIRED:false}
     clamav-host: ${CLAMAV_HOST:}
     clamav-port: ${CLAMAV_PORT:3310}
   ai-task:
+    scheduler-enabled: ${AI_TASK_SCHEDULER_ENABLED:true}
     poll-interval-ms: ${AI_TASK_POLL_INTERVAL_MS:1000}
     fetch-limit: ${AI_TASK_FETCH_LIMIT:12}
     worker-count: ${AI_TASK_WORKER_COUNT:3}
@@ -98,12 +124,29 @@ app:
   verification-code:
     ttl: ${REGISTER_CODE_TTL:5m}
     cooldown: ${REGISTER_CODE_COOLDOWN:60s}
+    max-daily-password-reset-sends: ${PASSWORD_RESET_CODE_MAX_DAILY_SENDS:10}
+    max-password-reset-verify-failures: ${PASSWORD_RESET_CODE_MAX_VERIFY_FAILURES:5}
     sms-host: ${REGISTER_SMS_HOST:https://dfsns.market.alicloudapi.com}
     sms-path: ${REGISTER_SMS_PATH:/data/send_sms}
     sms-app-code: ${REGISTER_SMS_APP_CODE:}
     sms-template-id: ${REGISTER_SMS_TEMPLATE_ID:CST_ptdie100}
     mail-from: ${MAIL_FROM:${MAIL_USERNAME:}}
     mail-subject: ${REGISTER_CODE_MAIL_SUBJECT:注册验证码}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      algorithmJudgeWorker:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 5s
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
 
 springdoc:
   api-docs:

@@ -11,4 +11,5 @@ public class Role {
     private String roleName;
     private String description;
     private Integer status;
+    private Integer version;
 }

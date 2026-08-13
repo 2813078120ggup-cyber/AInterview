@@ -10,6 +10,7 @@ public final class PromptCatalog {
     public static final String SIMULATION_OPENING = "simulation.opening";
     public static final String FREE_INTERVIEW_FOLLOW_UP = "free_interview.follow_up";
     public static final String RESUME_ANALYSIS = "resume.analysis";
+    public static final String RECRUITMENT_JOB_MATCH = "recruitment.job_match";
     public static final String ANSWER_EVALUATION = "report.answer_evaluation";
     public static final String SIMULATION_REPORT = "report.simulation_summary";
     public static final String FREE_INTERVIEW_REPORT = "report.free_summary";
@@ -39,6 +40,9 @@ public final class PromptCatalog {
                 "简历驱动自由面试的连续追问", Set.of("nextTurn", "resumeSummary", "transcript"));
         add(definitions, RESUME_ANALYSIS, "简历分析", "RESUME_ANALYSIS",
                 "提炼简历事实、风险和首轮问题", Set.of("targetRole", "resumeText"));
+        add(definitions, RECRUITMENT_JOB_MATCH, "岗位匹配分析", "RECRUITMENT",
+                "依据岗位 JD 与候选人简历生成可解释匹配结果", Set.of("jobTitle", "jobDescription", "requirements",
+                        "skillTags", "resumeProfile", "resumeSkills", "resumeText"));
         add(definitions, ANSWER_EVALUATION, "单题回答评分", "REPORT_SCORING",
                 "模拟面试单题四维评分", Set.of("question", "referenceAnswer", "candidateAnswer"));
         add(definitions, SIMULATION_REPORT, "模拟面试报告", "REPORT_SCORING",

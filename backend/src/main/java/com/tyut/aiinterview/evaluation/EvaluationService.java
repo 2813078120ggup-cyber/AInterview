@@ -8,6 +8,7 @@ import com.tyut.aiinterview.domain.InterviewQuestion;
 import com.tyut.aiinterview.mapper.EvaluationMapper;
 import com.tyut.aiinterview.mapper.InterviewMapper;
 import com.tyut.aiinterview.mapper.InterviewQuestionMapper;
+import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -18,13 +19,26 @@ public class EvaluationService {
     private final InterviewMapper interviewMapper;
     private final InterviewQuestionMapper interviewQuestionMapper;
     private final CurrentUser currentUser;
-    public EvaluationService(EvaluationMapper evaluationMapper, InterviewMapper interviewMapper, InterviewQuestionMapper interviewQuestionMapper, CurrentUser currentUser) {
-        this.evaluationMapper = evaluationMapper; this.interviewMapper = interviewMapper; this.interviewQuestionMapper = interviewQuestionMapper; this.currentUser = currentUser;
+    private final CompanyAccessService companyAccess;
+    public EvaluationService(EvaluationMapper evaluationMapper, InterviewMapper interviewMapper, InterviewQuestionMapper interviewQuestionMapper,
+                             CurrentUser currentUser, CompanyAccessService companyAccess) {
+        this.evaluationMapper = evaluationMapper; this.interviewMapper = interviewMapper; this.interviewQuestionMapper = interviewQuestionMapper;
+        this.currentUser = currentUser; this.companyAccess = companyAccess;
     }
     public Evaluation submitHuman(Long interviewId, Long interviewQuestionId, EvaluationDtos.HumanEvaluationRequest request) {
         Interview interview = interviewMapper.selectById(interviewId);
         if (interview == null) throw BusinessException.notFound("面试不存在");
-        if (!currentUser.id().equals(interview.getInterviewerId())) throw BusinessException.forbidden("仅指定面试官可提交人工评测");
+        if (currentUser.hasCompanyRole()) {
+            companyAccess.requirePermission("interview:review");
+            companyAccess.requireAuthorizedInterview(interviewId);
+            if (!currentUser.id().equals(interview.getInterviewerId())
+                    && !currentUser.hasRole("COMPANY_ADMIN")
+                    && !currentUser.hasPermission("interview:create")) {
+                throw BusinessException.forbidden("仅授权面试官可提交人工评测");
+            }
+        } else if (!currentUser.id().equals(interview.getInterviewerId())) {
+            throw BusinessException.forbidden("仅指定面试官可提交人工评测");
+        }
         if (interview.getStatus() != Interview.COMPLETED) throw BusinessException.badRequest("面试结束后才能提交评测");
         InterviewQuestion selected = interviewQuestionMapper.selectById(interviewQuestionId);
         if (selected == null || !selected.getInterviewId().equals(interviewId)) throw BusinessException.notFound("面试题目不存在");
@@ -40,7 +54,17 @@ public class EvaluationService {
         Interview interview = interviewMapper.selectById(interviewId);
         if (interview == null) throw BusinessException.notFound("面试不存在");
         Long userId = currentUser.id();
-        if (!(userId.equals(interview.getInterviewerId()) || currentUser.hasRole("ADMIN"))) throw BusinessException.forbidden("无权查看评测");
+        if (currentUser.hasCompanyRole()) {
+            companyAccess.requirePermission("interview:read");
+            companyAccess.requireAuthorizedInterview(interviewId);
+            if (!userId.equals(interview.getInterviewerId())
+                    && !currentUser.hasRole("COMPANY_ADMIN")
+                    && !currentUser.hasPermission("interview:create")) {
+                throw BusinessException.forbidden("无权查看评测");
+            }
+        } else if (!(userId.equals(interview.getInterviewerId()) || currentUser.hasRole("ADMIN"))) {
+            throw BusinessException.forbidden("无权查看评测");
+        }
         List<Long> ids = interviewQuestionMapper.selectList(new LambdaQueryWrapper<InterviewQuestion>().eq(InterviewQuestion::getInterviewId, interviewId)).stream().map(InterviewQuestion::getId).toList();
         return ids.isEmpty() ? List.of() : evaluationMapper.selectList(new LambdaQueryWrapper<Evaluation>().in(Evaluation::getInterviewQuestionId, ids));
     }
