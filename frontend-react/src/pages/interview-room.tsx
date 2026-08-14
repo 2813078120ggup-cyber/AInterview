@@ -24,7 +24,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -331,6 +331,7 @@ export function InterviewRoom() {
 
   const question = questions[active];
   currentQuestion.current = question;
+  const questionId = question?.interviewQuestionId;
   const finished = isInterviewFinished(interview?.status);
   const choiceQuestion = choiceTypes.includes(question?.questionType ?? "");
   const options = useMemo(
@@ -353,6 +354,63 @@ export function InterviewRoom() {
   recordedInterviewState.current = recordedInterview;
   const virtualProviderName =
     virtualProvider === "opentalking" ? "OpenTalking" : "未连接";
+
+  const activateRecordingQuestion = useEffectEvent((targetQuestionId: string) => {
+    const target = currentQuestion.current;
+    if (!target || target.interviewQuestionId !== targetQuestionId) return;
+    if (timelineQuestionId.current !== targetQuestionId) {
+      timelineQuestionId.current = targetQuestionId;
+      void addTimelineEvent("QUESTION_STARTED", targetQuestionId, target.content);
+    }
+    if (recordedInterview && captureReady) queueQuestionRecording(target);
+  });
+
+  const finishOnTimeout = useEffectEvent(() =>
+    finishWithProgress({ submitCurrentAnswer: true, timeExpired: true }),
+  );
+
+  const readCurrentQuestion = useEffectEvent((targetQuestionId: string) => {
+    const target = currentQuestion.current;
+    if (!target || target.interviewQuestionId !== targetQuestionId) return;
+    void readQuestion(target, false);
+  });
+
+  const releaseRemoteSession = useEffectEvent(() => {
+    disposeAvatarImmediately();
+    stopRecordingImmediately();
+  });
+
+  const retryPendingWork = useEffectEvent(() => {
+    if (pendingSave.current) void retryPendingSave();
+    if (pendingRecordingUploads.current.length) void retryRecordingUploads();
+  });
+
+  const restoreFollowupTask = useEffectEvent(
+    async (taskId: string, taskStatus: string, targetQuestionId: string) => {
+      const target = currentQuestion.current;
+      if (!target || target.interviewQuestionId !== targetQuestionId) return;
+      restoredTaskId.current = taskId;
+      const context = beginFollowup(targetQuestionId);
+      setThinking(true);
+      setVirtualMessage("正在恢复未完成的追问");
+      try {
+        const task =
+          taskStatus === "SUCCESS"
+            ? await request<Task>("/v1/ai-tasks/" + taskId)
+            : await waitFollowupTask(taskId);
+        const followUp = safeJson<{ followUp?: string }>(task.outputPayload, {}).followUp?.trim();
+        if (!followUp) throw new Error("恢复的 AI 任务没有有效追问。");
+        if (applyFollowup(followUp, context, { releaseThinking: false })) {
+          await browserSpeak(followUp);
+          setVirtualMessage("追问已恢复");
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "未完成追问恢复失败。");
+      } finally {
+        if (isCurrentFollowup(context)) setThinking(false);
+      }
+    },
+  );
 
   useEffect(() => {
     followupToken.current += 1;
@@ -431,20 +489,12 @@ export function InterviewRoom() {
   }, [id, question, answers, choiceQuestion]);
 
   useEffect(() => {
-    if (!recording || modeDialogOpen || !question || finished) return;
-    if (timelineQuestionId.current !== question.interviewQuestionId) {
-      timelineQuestionId.current = question.interviewQuestionId;
-      void addTimelineEvent(
-        "QUESTION_STARTED",
-        question.interviewQuestionId,
-        question.content,
-      );
-    }
-    if (recordedInterview && captureReady) queueQuestionRecording(question);
+    if (!recording?.id || modeDialogOpen || !questionId || finished) return;
+    activateRecordingQuestion(questionId);
   }, [
     recording?.id,
     modeDialogOpen,
-    question?.interviewQuestionId,
+    questionId,
     recordedInterview,
     captureReady,
     finished,
@@ -512,7 +562,7 @@ export function InterviewRoom() {
       return;
     finishRequestLock.current = true;
     setFinishDialogOpen(true);
-    void finishWithProgress({ submitCurrentAnswer: true, timeExpired: true });
+    void finishOnTimeout();
   }, [interview?.status, seconds]);
 
   useEffect(() => {
@@ -580,26 +630,27 @@ export function InterviewRoom() {
   }, [id, question, choiceQuestion, finished, draft]);
 
   useEffect(() => {
+    const targetQuestionId = questionId;
     if (
-      !recording ||
+      !recording?.id ||
       !virtualActive ||
       !tts ||
-      !question ||
-      lastReadQuestionId.current === question.interviewQuestionId
+      !targetQuestionId ||
+      lastReadQuestionId.current === targetQuestionId
     )
       return;
-    void readQuestion(question, false);
+    readCurrentQuestion(targetQuestionId);
   }, [
     recording?.id,
     virtualActive,
     tts,
-    question?.interviewQuestionId,
+    questionId,
     choiceQuestion,
   ]);
 
   useEffect(() => {
     const savedSelection = answerKeys(
-      question ? answers[question.interviewQuestionId]?.answerData : undefined,
+      questionId ? answers[questionId]?.answerData : undefined,
     );
     const choiceDirty =
       choiceQuestion &&
@@ -616,16 +667,12 @@ export function InterviewRoom() {
     draft,
     selected,
     choiceQuestion,
-    question?.interviewQuestionId,
+    questionId,
     answers,
     saveStatus,
   ]);
 
   useEffect(() => {
-    const releaseRemoteSession = () => {
-      disposeAvatarImmediately();
-      stopRecordingImmediately();
-    };
     const protectUnsavedAnswer = (event: BeforeUnloadEvent) => {
       releaseRemoteSession();
       if (
@@ -649,8 +696,7 @@ export function InterviewRoom() {
   useEffect(() => {
     const onOnline = () => {
       setOnline(true);
-      if (pendingSave.current) void retryPendingSave();
-      if (pendingRecordingUploads.current.length) void retryRecordingUploads();
+      retryPendingWork();
     };
     const onOffline = () => setOnline(false);
     window.addEventListener("online", onOnline);
@@ -664,9 +710,10 @@ export function InterviewRoom() {
   useEffect(() => {
     const taskId = progress?.activeTaskId ? String(progress.activeTaskId) : "";
     const taskSequence = progress?.activeTaskSequence ?? 0;
+    const targetQuestionId = questionId;
     if (
       !taskId ||
-      !question ||
+      !targetQuestionId ||
       choiceQuestion ||
       finished ||
       restoredTaskId.current === taskId
@@ -679,39 +726,17 @@ export function InterviewRoom() {
     )
       return;
     if (taskSequence <= (progress?.followUpCount ?? 0)) return;
-    restoredTaskId.current = taskId;
-    const context = beginFollowup(question.interviewQuestionId);
-    setThinking(true);
-    setVirtualMessage("正在恢复未完成的追问");
-    void (async () => {
-      try {
-        const task =
-          progress?.activeTaskStatus === "SUCCESS"
-            ? await request<Task>("/v1/ai-tasks/" + taskId)
-            : await waitFollowupTask(taskId);
-        const followUp = safeJson<{ followUp?: string }>(
-          task.outputPayload,
-          {},
-        ).followUp?.trim();
-        if (!followUp) throw new Error("恢复的 AI 任务没有有效追问。");
-        if (applyFollowup(followUp, context, { releaseThinking: false })) {
-          await browserSpeak(followUp);
-          setVirtualMessage("追问已恢复");
-        }
-      } catch (reason) {
-        setError(
-          reason instanceof Error ? reason.message : "未完成追问恢复失败。",
-        );
-      } finally {
-        if (isCurrentFollowup(context)) setThinking(false);
-      }
-    })();
+    void restoreFollowupTask(
+      taskId,
+      progress?.activeTaskStatus ?? "",
+      targetQuestionId,
+    );
   }, [
     progress?.activeTaskId,
     progress?.activeTaskStatus,
     progress?.activeTaskSequence,
     progress?.followUpCount,
-    question?.interviewQuestionId,
+    questionId,
     choiceQuestion,
     finished,
   ]);

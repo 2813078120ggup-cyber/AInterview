@@ -216,7 +216,9 @@ public class AuthService implements UserDetailsService {
     }
 
     private AuthDtos.UserProfile profile(UserAccount user, List<String> roles) {
-        return new AuthDtos.UserProfile(user.getId(), user.getUsername(), user.getRealName(), roles, user.getCompanyId());
+        List<String> effectiveRoles = LoginUser.effectiveRoles(roles);
+        Long effectiveCompanyId = effectiveRoles.contains("CANDIDATE") ? null : user.getCompanyId();
+        return new AuthDtos.UserProfile(user.getId(), user.getUsername(), user.getRealName(), effectiveRoles, effectiveCompanyId);
     }
 
     private AuthDtos.LoginResponse loginResponse(UserAccount user, RefreshTokenService.IssuedToken refreshToken) {

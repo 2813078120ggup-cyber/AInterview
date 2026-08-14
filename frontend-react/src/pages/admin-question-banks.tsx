@@ -1,5 +1,5 @@
 import { BookOpen, Download, Eye, EyeOff, Loader2, Plus, Search, ToggleLeft, ToggleRight, Trash2, UploadCloud, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
@@ -186,7 +186,9 @@ export function AdminQuestionBanks() {
     }
   }
 
-  useEffect(() => { void load('') }, [status])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect('') }, [status])
 
   const visible = useMemo(() => items.filter(item => {
     const keywordMatched = item.name.toLowerCase().includes(keyword.toLowerCase()) || item.bankCode.toLowerCase().includes(keyword.toLowerCase())

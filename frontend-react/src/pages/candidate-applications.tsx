@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { AlertTriangle, BriefcaseBusiness, Building2, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Circle, FileText, Loader2, MapPin, RefreshCw, RotateCcw, Search, Sparkles, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -96,6 +96,7 @@ export function CandidateApplications() {
 
   const keyword = searchParams.get('keyword') ?? ''
   const status = searchParams.get('status') ?? ''
+  const targetApplicationId = searchParams.get('applicationId')
   const pageNoValue = Number(searchParams.get('pageNo') ?? '1')
   const pageNo = Number.isFinite(pageNoValue) && pageNoValue > 0 ? Math.floor(pageNoValue) : 1
   const activeFilterCount = [keyword, status].filter(Boolean).length
@@ -160,7 +161,7 @@ export function CandidateApplications() {
     window.scrollTo({ top: 0, behavior })
   }
 
-  async function openDetail(id: string) {
+  const openDetail = useCallback(async (id: string) => {
     setLoadingDetail(true)
     setDetailError('')
     setMatchEvaluation(undefined)
@@ -181,6 +182,21 @@ export function CandidateApplications() {
     } catch (reason) {
       setDetailError(reason instanceof Error ? reason.message : '申请详情加载失败，请重试。')
     } finally { setMatchHistoryLoading(false); setLoadingDetail(false) }
+  }, [])
+
+  useEffect(() => {
+    if (targetApplicationId) void openDetail(targetApplicationId)
+  }, [openDetail, targetApplicationId])
+
+  function closeDetail() {
+    setSelected(undefined)
+    setDetailError('')
+    if (!targetApplicationId) return
+    setSearchParams(current => {
+      const next = new URLSearchParams(current)
+      next.delete('applicationId')
+      return next
+    }, { replace: true })
   }
 
   function syncApplication(next: JobApplication) {
@@ -254,7 +270,7 @@ export function CandidateApplications() {
 
     {loadingDetail && <div role="status" aria-live="polite" className="fixed inset-0 z-[89] grid place-items-center bg-black/20"><div className="flex items-center gap-3 rounded-2xl bg-surface px-5 py-4 text-sm font-semibold shadow-xl"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />正在打开申请详情…</div></div>}
 
-    <Dialog.Root open={Boolean(selected)} onOpenChange={open => { if (!open) { setSelected(undefined); setDetailError('') } }}>
+    <Dialog.Root open={Boolean(selected)} onOpenChange={open => { if (!open) closeDetail() }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/45 backdrop-blur-sm" />
         <Dialog.Content className="safe-area-bottom fixed inset-x-3 bottom-3 top-3 z-[91] mx-auto max-w-3xl overflow-y-auto overscroll-contain rounded-[24px] border border-border bg-surface p-5 shadow-2xl focus:outline-none sm:inset-x-6 sm:p-8 lg:bottom-auto lg:top-1/2 lg:max-h-[88vh] lg:-translate-y-1/2">

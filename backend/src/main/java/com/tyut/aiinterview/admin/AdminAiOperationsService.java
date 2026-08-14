@@ -198,12 +198,20 @@ public class AdminAiOperationsService {
                 || ("virtual-human".equals(config.getKind())
                 ? StringUtils.hasText(config.getBaseUrl()) && StringUtils.hasText(config.getAvatarModel())
                 : StringUtils.hasText(config.getBaseUrl()) && StringUtils.hasText(config.getChatModel()));
-        String state = !enabled ? "DISABLED" : configured ? "CONFIGURED" : "ATTENTION";
-        String label = !enabled ? "已停用" : configured ? "已配置，待测试" : "需要补充配置";
+        String testState = config.getLastTestState();
+        String state = !enabled ? "DISABLED" : !configured ? "ATTENTION"
+                : "SUCCESS".equals(testState) ? "UP"
+                : "FAILED".equals(testState) || "TIMEOUT".equals(testState) ? "DOWN" : "CONFIGURED";
+        String label = !enabled ? "已停用" : !configured ? "需要补充配置"
+                : "SUCCESS".equals(testState) ? "测试通过"
+                : "TIMEOUT".equals(testState) ? "测试超时"
+                : "FAILED".equals(testState) ? "测试失败" : "已配置，待测试";
         String model = "llm".equals(config.getKind()) ? config.getChatModel()
                 : "virtual-human".equals(config.getKind()) ? config.getAvatarModel() : config.getVoiceModel();
         return new AdminAiOperationsDtos.ProviderView(config.getId(), config.getName(), config.getCode(),
-                config.getKind(), model, state, label, enabled, truthy(config.getTextDefault()), truthy(config.getVoiceDefault()));
+                config.getKind(), model, state, label, enabled, truthy(config.getTextDefault()), truthy(config.getVoiceDefault()),
+                config.getLastTestState(), config.getLastTestStatusCode(), config.getLastTestLatencyMs(),
+                config.getLastTestMessage(), config.getLastTestedAt());
     }
 
     private AdminAiOperationsDtos.PromptView promptView(AiPromptVersion version) {

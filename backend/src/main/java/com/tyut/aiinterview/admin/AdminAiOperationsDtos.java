@@ -22,7 +22,10 @@ public final class AdminAiOperationsDtos {
 
     public record ProviderView(Long id, String name, String code, String kind, String model,
                                String state, String stateLabel, boolean enabled,
-                               boolean textDefault, boolean voiceDefault) {
+                               boolean textDefault, boolean voiceDefault,
+                               String lastTestState, Integer lastTestStatusCode,
+                               Long lastTestLatencyMs, String lastTestMessage,
+                               LocalDateTime lastTestedAt) {
     }
 
     public record PromptView(String code, String name, String category, Integer version,

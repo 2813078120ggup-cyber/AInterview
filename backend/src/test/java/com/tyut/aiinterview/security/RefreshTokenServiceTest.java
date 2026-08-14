@@ -39,13 +39,12 @@ class RefreshTokenServiceTest {
         active.setSessionId("session-a");
         active.setExpiresAt(LocalDateTime.now().plusDays(1));
         when(mapper.selectOne(any())).thenReturn(active);
+        when(mapper.rotateActiveToken(any(), any())).thenReturn(1);
 
         RefreshTokenService service = new RefreshTokenService(mapper, properties);
         service.rotate("plain-token", "127.0.0.1", "test-agent");
 
-        assertNotNull(active.getLastUsedAt());
-        assertNotNull(active.getRevokedAt());
-        assertEquals("ROTATED", active.getRevokedReason());
+        verify(mapper).rotateActiveToken(org.mockito.ArgumentMatchers.eq(11L), any(LocalDateTime.class));
         ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
         verify(mapper).insert(captor.capture());
         assertEquals("session-a", captor.getValue().getSessionId());
@@ -117,6 +116,23 @@ class RefreshTokenServiceTest {
         revoked.setRevokedAt(LocalDateTime.now());
         revoked.setRevokedReason("SESSION_REVOKED");
         when(mapper.selectOne(any())).thenReturn(revoked);
+        RefreshTokenService service = new RefreshTokenService(mapper, properties);
+
+        org.junit.jupiter.api.Assertions.assertThrows(com.tyut.aiinterview.common.BusinessException.class,
+                () -> service.rotate("plain-token", "127.0.0.1", "test-agent"));
+
+        verify(mapper, never()).insert(any(RefreshToken.class));
+    }
+
+    @Test
+    void rotationIsRejectedWhenAnotherRequestAlreadyConsumedTheToken() {
+        RefreshToken active = new RefreshToken();
+        active.setId(15L);
+        active.setUserId(7L);
+        active.setSessionId("session-a");
+        active.setExpiresAt(LocalDateTime.now().plusDays(1));
+        when(mapper.selectOne(any())).thenReturn(active);
+        when(mapper.rotateActiveToken(any(), any())).thenReturn(0);
         RefreshTokenService service = new RefreshTokenService(mapper, properties);
 
         org.junit.jupiter.api.Assertions.assertThrows(com.tyut.aiinterview.common.BusinessException.class,

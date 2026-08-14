@@ -20,6 +20,7 @@ export function AlgorithmVisualizerDetailPage() {
   const [draftInput, setDraftInput] = useState(() => formatNumberInput(selectedAlgorithm.defaultInput))
   const [target, setTarget] = useState(selectedAlgorithm.defaultTarget?.toString() ?? '')
   const [draftTarget, setDraftTarget] = useState(selectedAlgorithm.defaultTarget?.toString() ?? '')
+  const [runVersion, setRunVersion] = useState(0)
 
   useEffect(() => {
     if (!algorithm) return
@@ -30,7 +31,7 @@ export function AlgorithmVisualizerDetailPage() {
   }, [algorithm, algorithmSlug])
 
   const steps = useMemo(() => selectedAlgorithm.buildSteps(values, target ? Number(target) : undefined), [selectedAlgorithm, target, values])
-  const player = useAlgorithmPlayer(steps.length)
+  const player = useAlgorithmPlayer(steps.length, `${selectedAlgorithm.slug}:${runVersion}`)
   const currentStep = steps[player.currentStep]
 
   if (!algorithm) return <Navigate to="/algorithm/visualizer" replace />
@@ -42,6 +43,7 @@ export function AlgorithmVisualizerDetailPage() {
       const nextTarget = Number(draftTarget)
       setTarget(Number.isFinite(nextTarget) ? String(nextTarget) : String(selectedAlgorithm.defaultTarget))
     }
+    setRunVersion(version => version + 1)
   }
 
   function resetInput() {
@@ -50,6 +52,7 @@ export function AlgorithmVisualizerDetailPage() {
     const defaultTarget = selectedAlgorithm.defaultTarget?.toString() ?? ''
     setTarget(defaultTarget)
     setDraftTarget(defaultTarget)
+    setRunVersion(version => version + 1)
   }
 
   return <div className="space-y-6">

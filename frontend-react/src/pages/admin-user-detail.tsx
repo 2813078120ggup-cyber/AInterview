@@ -1,11 +1,13 @@
-import { ArrowLeft, Building2, Check, Loader2, Power, Save, ShieldCheck, UserRound, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, ArrowLeft, Building2, Loader2, Power, Save, ShieldCheck, UserRound, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { RoleAssignmentPicker } from '@/components/admin/role-assignment-picker'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { request } from '@/lib/api'
 import type { AdminRole, AdminUser } from '@/lib/admin'
+import { evaluateRoleSelection, sameRoleSelection } from '@/lib/role-assignment'
 
 function formatDate(value?: string | null) { return value ? value.replace('T', ' ').slice(0, 16) : '暂无' }
 function errorMessage(reason: unknown, fallback: string) { return reason instanceof Error ? reason.message : fallback }
@@ -36,12 +38,18 @@ export function AdminUserDetail() {
 
   useEffect(() => { void load() }, [load])
 
+  const roleSelection = useMemo(
+    () => evaluateRoleSelection(roles, selectedRoleIds, user?.companyId),
+    [roles, selectedRoleIds, user?.companyId],
+  )
+  const rolesChanged = user ? !sameRoleSelection(selectedRoleIds, user.roleIds) : false
+
   function toggleRole(roleId: string) {
     setSelectedRoleIds(current => current.includes(roleId) ? current.filter(item => item !== roleId) : [...current, roleId])
   }
 
   async function saveRoles() {
-    if (!id || !selectedRoleIds.length) { setError('至少保留一个角色。'); return }
+    if (!id || !roleSelection.valid) { setError(roleSelection.message); return }
     setSaving(true)
     try {
       const next = await request<AdminUser>(`/v1/users/${id}/roles`, { method: 'PUT', body: JSON.stringify({ roleIds: selectedRoleIds }) })
@@ -70,8 +78,22 @@ export function AdminUserDetail() {
     <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div className="flex min-w-0 items-start gap-4"><span className="grid h-14 w-14 shrink-0 place-items-center rounded-[22px] bg-[var(--accent-soft)] text-[var(--accent)]"><UserRound className="h-7 w-7" /></span><div className="min-w-0"><p className="text-sm font-semibold text-[var(--accent)]">用户与权限</p><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="break-words text-3xl font-bold tracking-tight sm:text-4xl">{user.realName || user.username}</h1><Badge tone={user.status === 1 ? 'success' : 'default'}>{user.status === 1 ? '启用' : '停用'}</Badge></div><p className="mt-3 break-all text-sm text-muted-foreground">@{user.username} · {user.email || user.phone || '暂无联系方式'}</p></div></div><Button type="button" variant={user.status === 1 ? 'danger' : 'primary'} onClick={() => void toggleStatus()} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}{user.status === 1 ? '停用账号' : '启用账号'}</Button></header>
     {error && <div className="flex items-start justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"><span>{error}</span><Button type="button" variant="ghost" className="h-8 w-8 shrink-0 rounded-full px-0" onClick={() => setError('')} aria-label="关闭提示"><X className="h-4 w-4" /></Button></div>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,.8fr)]"><Card className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">身份信息</p><h2 className="mt-1 text-xl font-bold">账号概览</h2></div><Badge tone={user.roles.includes('ADMIN') ? 'warning' : 'default'}>{user.roles.includes('ADMIN') ? '超级管理员' : '普通账号'}</Badge></div><dl className="mt-6 grid gap-x-6 gap-y-5 sm:grid-cols-2"><Info label="账号" value={`@${user.username}`} /><Info label="姓名" value={user.realName} /><Info label="邮箱" value={user.email} /><Info label="手机号" value={user.phone} /><Info label="最近登录" value={formatDate(user.lastLoginAt)} /><Info label="创建时间" value={formatDate(user.createdAt)} /><div className="sm:col-span-2"><dt className="text-xs font-semibold text-muted-foreground">所属企业</dt><dd className="mt-1">{user.companyId ? <Link to={`/admin/companies/${user.companyId}`} className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] hover:underline"><Building2 className="h-4 w-4" />{user.companyName || `企业 ${user.companyId}`}</Link> : <span className="text-sm text-muted-foreground">平台账号，不绑定企业</span>}</dd></div></dl></Card>
-      <Card className="p-5 sm:p-7"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)]" /><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">安全边界</p><h2 className="mt-1 text-xl font-bold">角色由服务端执行</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">页面上的角色说明只用于确认影响范围，真正的企业归属、系统角色保护和最后超级管理员保护都在服务端校验。</p></div></div></Card></div>
-    <Card className="p-5 sm:p-7"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">角色分配</p><h2 className="mt-1 text-xl font-bold">调整角色</h2><p className="mt-2 text-sm text-muted-foreground">系统角色代码受保护；企业成员只能绑定企业角色。</p></div><Button type="button" onClick={() => void saveRoles()} disabled={saving}><Save className="h-4 w-4" />{saving ? '保存中' : '保存角色'}</Button></div><div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{roles.filter(role => role.status === 1).map(role => { const active = selectedRoleIds.includes(role.id); return <button type="button" key={role.id} onClick={() => toggleRole(role.id)} className={`min-h-24 rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${active ? 'border-[var(--accent)] bg-[var(--accent-soft)]' : 'border-border bg-background hover:bg-muted'}`} aria-pressed={active}><div className="flex items-start justify-between gap-3"><div><strong className="block text-sm">{role.roleName}</strong><span className="mt-1 block text-xs text-muted-foreground">{role.roleCode}</span></div>{active && <Check className="h-4 w-4 shrink-0 text-[var(--accent)]" />}</div><p className="mt-3 text-xs leading-5 text-muted-foreground">{role.description || '暂无角色说明'}</p></button> })}</div></Card>
+      <Card className="p-5 sm:p-7"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)]" /><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">安全边界</p><h2 className="mt-1 text-xl font-bold">身份域由服务端执行</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">候选人身份独占；企业成员只能使用所属企业角色；平台人员角色可按职责组合。最后一个平台或企业管理员均受保护，角色变化会立即使该用户原登录会话失效。</p></div></div></Card></div>
+    <Card className="p-5 sm:p-7">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">角色分配</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold">调整角色</h2><Badge tone={roleSelection.valid ? 'info' : 'danger'}>{roleSelection.label}</Badge></div>
+          <p className="mt-2 text-sm text-muted-foreground">先确定账号身份域，再在该域内组合职责；已选中的冲突角色始终允许取消。</p>
+        </div>
+        <Button type="button" onClick={() => void saveRoles()} disabled={saving || !rolesChanged || !roleSelection.valid}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? '保存中' : '保存角色'}
+        </Button>
+      </div>
+      {!roleSelection.valid && <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100" role="alert"><AlertTriangle className="mt-1 h-4 w-4 shrink-0" /><span><strong className="font-semibold">当前组合不能保存：</strong>{roleSelection.message}</span></div>}
+      <div className="mt-6"><RoleAssignmentPicker roles={roles} selectedRoleIds={selectedRoleIds} companyId={user.companyId} onToggle={toggleRole} /></div>
+    </Card>
   </div>
 }
 

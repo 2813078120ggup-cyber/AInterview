@@ -2,7 +2,9 @@ import { Activity, ArrowRight, Clock3, FileCode2, Link2, RefreshCw, RotateCcw, S
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+import { ProviderTestStatus, type ProviderTestResult } from '@/components/provider-test-status'
 import { Button } from '@/components/ui/button'
+import { buttonClassName } from '@/components/ui/button-styles'
 import { Card } from '@/components/ui/card'
 import { request } from '@/lib/api'
 import type { AdminAiOperationsOverview, AdminAiOperationsProvider, AdminAiOperationsTask } from '@/lib/admin'
@@ -23,18 +25,32 @@ function statusTone(value: string): 'success' | 'danger' | 'warning' | 'info' | 
   return value === 'SUCCESS' ? 'success' : value === 'FAILED' ? 'danger' : value === 'RUNNING' ? 'info' : value === 'PENDING' ? 'warning' : 'default'
 }
 
-function ProviderCard({ item, busy, onTest }: { item: AdminAiOperationsProvider; busy: boolean; onTest: () => void }) {
+function persistedTestResult(item: AdminAiOperationsProvider): ProviderTestResult | undefined {
+  if (!item.lastTestState || !item.lastTestMessage || item.lastTestLatencyMs == null) return undefined
+  return {
+    success: item.lastTestState === 'SUCCESS',
+    state: item.lastTestState,
+    statusCode: item.lastTestStatusCode ?? null,
+    latencyMs: item.lastTestLatencyMs,
+    message: item.lastTestMessage,
+    testedAt: item.lastTestedAt,
+  }
+}
+
+function ProviderCard({ item, busy, result, onTest }: { item: AdminAiOperationsProvider; busy: boolean; result?: ProviderTestResult; onTest: () => void }) {
+  const displayResult = result ?? persistedTestResult(item)
   return <Card className="min-w-0 p-5">
     <div className="flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]"><Server className="h-5 w-5" /></span>
         <div className="min-w-0"><h3 className="break-words font-bold">{item.name}</h3><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{item.code}</p></div>
       </div>
-      <Badge tone={item.state === 'CONFIGURED' ? 'success' : item.state === 'ATTENTION' ? 'warning' : item.state === 'DISABLED' ? 'default' : 'danger'}>{item.stateLabel}</Badge>
+      <Badge tone={item.state === 'UP' ? 'success' : item.state === 'CONFIGURED' || item.state === 'ATTENTION' ? 'warning' : item.state === 'DISABLED' ? 'default' : 'danger'}>{item.stateLabel}</Badge>
     </div>
     <dl className="mt-5 grid gap-2 text-sm"><div className="flex justify-between gap-4"><dt className="text-muted-foreground">类型</dt><dd>{item.kind}</dd></div><div className="flex justify-between gap-4"><dt className="text-muted-foreground">模型 / 能力</dt><dd className="max-w-[60%] break-words text-right">{item.model || '—'}</dd></div></dl>
     <div className="mt-5 flex flex-wrap gap-2"><Badge tone={item.enabled ? 'success' : 'default'}>{item.enabled ? '已启用' : '已停用'}</Badge>{item.textDefault && <Badge tone="info">文字默认</Badge>}{item.voiceDefault && <Badge tone="warning">语音默认</Badge>}</div>
-    <div className="mt-5 flex flex-wrap gap-2"><Button type="button" variant="secondary" className="h-10" onClick={onTest} disabled={busy || !item.enabled}>{busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}测试 Provider</Button><Link to="/admin/settings" className="inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground">配置详情<ArrowRight className="h-4 w-4" /></Link></div>
+    <div className="mt-5 flex flex-wrap gap-2"><Button type="button" variant="secondary" size="compact" onClick={onTest} disabled={busy || !item.enabled}>{busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}{busy ? '测试中…' : '测试 Provider'}</Button><Link to="/admin/settings" className={buttonClassName({ variant: 'ghost', size: 'compact', className: 'text-muted-foreground hover:text-foreground' })}>配置详情<ArrowRight className="h-4 w-4" /></Link></div>
+    <ProviderTestStatus result={displayResult} />
   </Card>
 }
 
@@ -48,6 +64,7 @@ export function AdminAiOperations() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [testingProvider, setTestingProvider] = useState('')
+  const [providerTestResults, setProviderTestResults] = useState<Record<string, ProviderTestResult>>({})
   const [retryingTask, setRetryingTask] = useState('')
 
   const load = useCallback(async () => {
@@ -60,11 +77,20 @@ export function AdminAiOperations() {
   async function testProvider(item: AdminAiOperationsProvider) {
     if (testingProvider) return
     setTestingProvider(item.id); setMessage('')
+    setProviderTestResults(previous => ({
+      ...previous,
+      [item.id]: { success: false, state: 'TESTING', statusCode: null, latencyMs: 0, message: '正在连接服务并检查健康状态，请稍候…' },
+    }))
     try {
-      const result = await request<{ success: boolean; state: string; latencyMs: number; message: string }>(`/v1/admin/ai-providers/${item.id}/test`, { method: 'POST' })
-      setMessage(`${item.name}：${result.state === 'TIMEOUT' ? '超时' : result.success ? '成功' : '失败'} · ${result.latencyMs}ms · ${result.message}`)
+      const result = await request<ProviderTestResult>(`/v1/admin/ai-providers/${item.id}/test`, { method: 'POST' })
+      setProviderTestResults(previous => ({ ...previous, [item.id]: result }))
       await load()
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Provider 测试失败，请稍后重试。') } finally { setTestingProvider('') }
+    } catch (reason) {
+      setProviderTestResults(previous => ({
+        ...previous,
+        [item.id]: { success: false, state: 'FAILED', statusCode: null, latencyMs: 0, message: reason instanceof Error ? reason.message : 'Provider 测试失败，请稍后重试。' },
+      }))
+    } finally { setTestingProvider('') }
   }
 
   async function retryTask(item: AdminAiOperationsTask) {
@@ -81,7 +107,7 @@ export function AdminAiOperations() {
 
     <Card><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Trace map</p><h2 className="mt-2 text-xl font-bold">一条 AI 请求如何回到业务</h2></div><Workflow className="h-5 w-5 text-[var(--accent)]" /></div><div className="mt-6 grid gap-2 md:grid-cols-6">{['业务记录', 'AI task', 'generation request', 'Provider / model', 'Prompt version', '业务结果'].map((item, index) => <div key={item} className="flex items-center gap-2"><div className="min-w-0 flex-1 rounded-2xl border border-border bg-background/60 px-3 py-3 text-center text-sm font-semibold">{item}</div>{index < 5 && <ArrowRight className="hidden h-4 w-4 shrink-0 text-muted-foreground md:block" />}</div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">关联页只展示 ID、状态、模型、Prompt 代码与版本，不展示完整简历、回答、输入输出正文、密钥或 Provider 原始响应。</p></Card>
 
-    <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Provider / model</p><h2 className="mt-2 text-xl font-bold">服务配置与探测</h2></div><Link to="/admin/settings" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)]">管理配置<ArrowRight className="h-4 w-4" /></Link></div><div className="grid gap-4 xl:grid-cols-3">{data?.providers.map(item => <ProviderCard key={item.id} item={item} busy={testingProvider === item.id} onTest={() => void testProvider(item)} />)}</div>{!loading && !data?.providers.length && <Card className="text-sm text-muted-foreground">暂无 Provider 配置。</Card>}</section>
+    <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Provider / model</p><h2 className="mt-2 text-xl font-bold">服务配置与探测</h2></div><Link to="/admin/settings" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)]">管理配置<ArrowRight className="h-4 w-4" /></Link></div><div className="grid gap-4 xl:grid-cols-3">{data?.providers.map(item => <ProviderCard key={item.id} item={item} busy={testingProvider === item.id} result={providerTestResults[item.id]} onTest={() => void testProvider(item)} />)}</div>{!loading && !data?.providers.length && <Card className="text-sm text-muted-foreground">暂无 Provider 配置。</Card>}</section>
 
     <section className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]"><Card><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Prompt version</p><h2 className="mt-2 text-xl font-bold">当前 Prompt 版本</h2></div><FileCode2 className="h-5 w-5 text-[var(--accent)]" /></div><div className="mt-5 divide-y divide-border">{data?.prompts.map(item => <Link key={item.code} to={`/admin/prompt-templates/${encodeURIComponent(item.code)}`} className="flex items-center justify-between gap-3 py-3 transition hover:text-[var(--accent)]"><span className="min-w-0"><strong className="block break-words">{item.name}</strong><span className="mt-1 block break-all font-mono text-xs text-muted-foreground">{item.code} · v{item.version}</span></span><Badge tone={item.active ? 'success' : 'default'}>{item.active ? '启用' : '未启用'}</Badge></Link>)}</div>{!loading && !data?.prompts.length && <p className="mt-5 text-sm text-muted-foreground">暂无 Prompt 版本。</p>}</Card><Card><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Async tasks</p><h2 className="mt-2 text-xl font-bold">异步任务状态</h2></div><Timer className="h-5 w-5 text-[var(--accent)]" /></div><div className="mt-5 space-y-3">{data?.recentTasks.map(item => <TaskRow key={item.id} item={item} retrying={retryingTask === item.id} onRetry={() => void retryTask(item)} />)}</div>{!loading && !data?.recentTasks.length && <p className="mt-5 text-sm text-muted-foreground">暂无异步任务。</p>}</Card></section>
 

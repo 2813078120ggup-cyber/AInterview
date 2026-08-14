@@ -38,6 +38,15 @@ public interface AdminUserMapper {
               <if test="createdToExclusive != null">
                 AND u.created_at &lt; #{createdToExclusive}
               </if>
+              <if test="platformEmployeeOnly">
+                AND u.company_id IS NULL
+                AND EXISTS (SELECT 1 FROM user_role employee_ur JOIN `role` employee_role ON employee_role.id = employee_ur.role_id
+                            WHERE employee_ur.user_id = u.id AND employee_role.status = 1
+                              AND employee_role.role_code NOT IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+                AND NOT EXISTS (SELECT 1 FROM user_role identity_ur JOIN `role` identity_role ON identity_role.id = identity_ur.role_id
+                                WHERE identity_ur.user_id = u.id
+                                  AND identity_role.role_code IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+              </if>
             ORDER BY u.created_at DESC, u.id DESC
             LIMIT #{offset}, #{limit}
             </script>
@@ -55,7 +64,8 @@ public interface AdminUserMapper {
                                   @Param("companyId") Long companyId, @Param("status") Integer status,
                                   @Param("createdFrom") java.time.LocalDateTime createdFrom,
                                   @Param("createdToExclusive") java.time.LocalDateTime createdToExclusive,
-                                  @Param("offset") long offset, @Param("limit") long limit);
+                                  @Param("offset") long offset, @Param("limit") long limit,
+                                  @Param("platformEmployeeOnly") boolean platformEmployeeOnly);
 
     @Select("""
             <script>
@@ -83,12 +93,22 @@ public interface AdminUserMapper {
               <if test="createdToExclusive != null">
                 AND u.created_at &lt; #{createdToExclusive}
               </if>
+              <if test="platformEmployeeOnly">
+                AND u.company_id IS NULL
+                AND EXISTS (SELECT 1 FROM user_role employee_ur JOIN `role` employee_role ON employee_role.id = employee_ur.role_id
+                            WHERE employee_ur.user_id = u.id AND employee_role.status = 1
+                              AND employee_role.role_code NOT IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+                AND NOT EXISTS (SELECT 1 FROM user_role identity_ur JOIN `role` identity_role ON identity_role.id = identity_ur.role_id
+                                WHERE identity_ur.user_id = u.id
+                                  AND identity_role.role_code IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+              </if>
             </script>
             """)
     long count(@Param("keyword") String keyword, @Param("roleCode") String roleCode,
                @Param("companyId") Long companyId, @Param("status") Integer status,
                @Param("createdFrom") java.time.LocalDateTime createdFrom,
-               @Param("createdToExclusive") java.time.LocalDateTime createdToExclusive);
+               @Param("createdToExclusive") java.time.LocalDateTime createdToExclusive,
+               @Param("platformEmployeeOnly") boolean platformEmployeeOnly);
 
     @Select("""
             SELECT u.id, u.username, u.real_name, u.email, u.phone, u.avatar_url, u.company_id,
@@ -107,6 +127,19 @@ public interface AdminUserMapper {
             @Result(column = "updated_at", property = "updatedAt")
     })
     AdminUserRow selectById(@Param("id") Long id);
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM `user` u
+            WHERE u.id = #{id} AND u.deleted_at IS NULL AND u.company_id IS NULL
+              AND EXISTS (SELECT 1 FROM user_role employee_ur JOIN `role` employee_role ON employee_role.id = employee_ur.role_id
+                          WHERE employee_ur.user_id = u.id AND employee_role.status = 1
+                            AND employee_role.role_code NOT IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+              AND NOT EXISTS (SELECT 1 FROM user_role identity_ur JOIN `role` identity_role ON identity_role.id = identity_ur.role_id
+                              WHERE identity_ur.user_id = u.id
+                                AND identity_role.role_code IN ('CANDIDATE', 'COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'))
+            """)
+    long countPlatformEmployeeById(@Param("id") Long id);
 
     @Select("""
             SELECT COUNT(DISTINCT u.id)

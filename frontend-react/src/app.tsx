@@ -8,6 +8,7 @@ import { CompanyPageShell } from '@/components/company-page-shell'
 import { GlobalMouseFollower } from '@/components/global-mouse-follower'
 import { PageTransition } from '@/components/page-transition'
 import { profile } from '@/lib/session'
+import { loginPath, postLoginDestination, workspaceAudienceFor } from '@/lib/navigation'
 
 /**
  * 路由级懒加载：每个页面独立的 Suspense 边界，切换菜单时只替换内容区，
@@ -28,6 +29,8 @@ const AdminCandidateDetail = lazyPage(() => import('@/pages/admin-candidate-deta
 const AdminCandidates = lazyPage(() => import('@/pages/admin-candidates').then(module => ({ default: module.AdminCandidates })))
 const AdminCompanies = lazyPage(() => import('@/pages/admin-companies').then(module => ({ default: module.AdminCompanies })))
 const AdminCompanyDetail = lazyPage(() => import('@/pages/admin-company-detail').then(module => ({ default: module.AdminCompanyDetail })))
+const AdminEmployeeDetail = lazyPage(() => import('@/pages/admin-employee-detail').then(module => ({ default: module.AdminEmployeeDetail })))
+const AdminEmployees = lazyPage(() => import('@/pages/admin-employees').then(module => ({ default: module.AdminEmployees })))
 const AdminInterviewReview = lazyPage(() => import('@/pages/admin-interview-review').then(module => ({ default: module.AdminInterviewReview })))
 const AdminInterviews = lazyPage(() => import('@/pages/admin-interviews').then(module => ({ default: module.AdminInterviews })))
 const AdminQuestionBanks = lazyPage(() => import('@/pages/admin-question-banks').then(module => ({ default: module.AdminQuestionBanks })))
@@ -99,12 +102,20 @@ function ContentFallback() {
 }
 
 function Protected({ children, admin = false, company = false }: { children: ReactNode; admin?: boolean; company?: boolean }) {
+  const location = useLocation()
   const current = profile()
-  if (!current) return <Navigate to="/login" replace />
-  if (admin && !current.roles.includes('ADMIN')) return <Navigate to="/candidate/interviews" replace />
-  const companyRole = current.roles.some(role => ['COMPANY_ADMIN', 'COMPANY_RECRUITER', 'COMPANY_INTERVIEWER'].includes(role))
-  if (company && !companyRole) return <Navigate to="/login" replace />
-  return <>{children}{!admin && !company && !current.roles.includes('ADMIN') && !companyRole && <AiAssistant />}</>
+  if (!current) return <Navigate to={loginPath(`${location.pathname}${location.search}${location.hash}`)} replace />
+  const audience = workspaceAudienceFor(current.roles)
+  if (admin && audience !== 'admin') return <Navigate to={postLoginDestination(current.roles)} replace />
+  if (company && audience !== 'company') return <Navigate to={postLoginDestination(current.roles)} replace />
+  return <>{children}{!admin && !company && audience === 'candidate' && <AiAssistant />}</>
+}
+
+function LoginRoute() {
+  const location = useLocation()
+  const current = profile()
+  if (current) return <Navigate to={postLoginDestination(current.roles, new URLSearchParams(location.search).get('next'))} replace />
+  return <PageTransition><LoginPage /></PageTransition>
 }
 
 function CandidateWorkspace() {
@@ -128,7 +139,7 @@ export function App() {
     {location.pathname !== '/' && location.pathname !== '/features' && <GlobalMouseFollower />}
     <Suspense fallback={<PageFallback />}>
       <Routes>
-        <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+        <Route path="/login" element={<LoginRoute />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/company" element={<Protected company><CompanyPageShell><CompanyDashboard /></CompanyPageShell></Protected>} />
         <Route path="/company/positions/new" element={<Protected company><CompanyPageShell><CompanyPositionForm /></CompanyPageShell></Protected>} />
@@ -146,6 +157,7 @@ export function App() {
         <Route path="/company/team" element={<Protected company><CompanyPageShell><CompanyTeam /></CompanyPageShell></Protected>} />
         <Route path="/company/analytics/positions" element={<Protected company><CompanyPageShell><CompanyAnalyticsPositions /></CompanyPageShell></Protected>} />
         <Route path="/company/analytics" element={<Protected company><CompanyPageShell><CompanyAnalytics /></CompanyPageShell></Protected>} />
+        <Route path="/company/account/security" element={<Protected company><CompanyPageShell><CandidateSecurity /></CompanyPageShell></Protected>} />
         <Route path="/admin/workspace" element={<Protected admin><AdminPageShell><AdminWorkspace /></AdminPageShell></Protected>} />
         <Route path="/admin/dashboard" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
         <Route path="/admin/index" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
@@ -153,6 +165,8 @@ export function App() {
         <Route path="/admin/companies" element={<Protected admin><AdminPageShell><AdminCompanies /></AdminPageShell></Protected>} />
         <Route path="/admin/users/:id" element={<Protected admin><AdminPageShell><AdminUserDetail /></AdminPageShell></Protected>} />
         <Route path="/admin/users" element={<Protected admin><AdminPageShell><AdminUsers /></AdminPageShell></Protected>} />
+        <Route path="/admin/employees/:id" element={<Protected admin><AdminPageShell><AdminEmployeeDetail /></AdminPageShell></Protected>} />
+        <Route path="/admin/employees" element={<Protected admin><AdminPageShell><AdminEmployees /></AdminPageShell></Protected>} />
         <Route path="/admin/roles" element={<Protected admin><AdminPageShell><AdminRoles /></AdminPageShell></Protected>} />
         <Route path="/admin/recruitment/applications/:id" element={<Protected admin><AdminPageShell><AdminRecruitmentApplicationDetail /></AdminPageShell></Protected>} />
         <Route path="/admin/recruitment" element={<Protected admin><AdminPageShell><AdminRecruitment /></AdminPageShell></Protected>} />
@@ -175,7 +189,8 @@ export function App() {
       <Route path="/admin/operations" element={<Protected admin><AdminPageShell><AdminOperations /></AdminPageShell></Protected>} />
       <Route path="/admin/algorithm/problems" element={<Protected admin><AdminPageShell><AdminAlgorithmProblems /></AdminPageShell></Protected>} />
       <Route path="/admin/learning-resources" element={<Protected admin><AdminPageShell><AdminLearningResources /></AdminPageShell></Protected>} />
-      <Route path="/admin/learning-resources/:publicId" element={<Protected admin><AdminPageShell><LearningResourceViewer /></AdminPageShell></Protected>} />
+        <Route path="/admin/learning-resources/:publicId" element={<Protected admin><AdminPageShell><LearningResourceViewer /></AdminPageShell></Protected>} />
+      <Route path="/admin/account/security" element={<Protected admin><AdminPageShell><CandidateSecurity /></AdminPageShell></Protected>} />
       <Route path="/admin" element={<Protected admin><Navigate to="/admin/workspace" replace /></Protected>} />
         <Route path="/candidate/interviews/:id/room" element={<Protected><PageTransition><InterviewRoom /></PageTransition></Protected>} />
         <Route path="/candidate/interviews/:id/report" element={<Protected><PageTransition><CandidateReport /></PageTransition></Protected>} />

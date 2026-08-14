@@ -2,6 +2,7 @@ package com.tyut.aiinterview.settings;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import java.time.LocalDateTime;
 
 public final class AiProviderDtos {
     private AiProviderDtos() {
@@ -40,7 +41,12 @@ public final class AiProviderDtos {
             boolean enabled,
             boolean textDefault,
             boolean voiceDefault,
-            String remark
+            String remark,
+            String lastTestState,
+            Integer lastTestStatusCode,
+            Long lastTestLatencyMs,
+            String lastTestMessage,
+            LocalDateTime lastTestedAt
     ) {
     }
 
@@ -49,7 +55,8 @@ public final class AiProviderDtos {
             Integer statusCode,
             String state,
             long latencyMs,
-            String message
+            String message,
+            LocalDateTime testedAt
     ) {
     }
 }

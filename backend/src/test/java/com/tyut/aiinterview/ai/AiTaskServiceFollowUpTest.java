@@ -50,7 +50,7 @@ class AiTaskServiceFollowUpTest {
                 deepSeekGateway, mock(PromptTemplateService.class),
                 mock(ChoiceAnswerScorer.class), objectMapper, currentUser,
                 mock(com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService.class),
-                Runnable::run, Runnable::run, 12);
+                Runnable::run, Runnable::run, 12, 300);
         when(currentUser.id()).thenReturn(7L);
         when(interviewMapper.selectById(11L)).thenReturn(interview());
         when(interviewQuestionMapper.selectById(21L)).thenReturn(interviewQuestion());
@@ -115,6 +115,7 @@ class AiTaskServiceFollowUpTest {
         task.setMaxAttempts(3);
         task.setInputPayload("{\"question\":\"服务端题目\",\"answer\":\"候选人回答\",\"conversationContext\":\"候选人：候选人回答\",\"previousFollowUps\":\"\"}");
         when(taskMapper.selectById(51L)).thenReturn(task);
+        when(taskMapper.claimPending(any(), anyString(), anyString(), any(), any())).thenReturn(1);
         when(taskMapper.update(any(AiTask.class), any())).thenReturn(1);
         when(deepSeekGateway.followUp(anyString(), anyString(), anyString(), any()))
                 .thenReturn(new DeepSeekGateway.Generated<>("request-1", "simulation.follow_up", 2,
@@ -128,6 +129,47 @@ class AiTaskServiceFollowUpTest {
         assertEquals("SUCCESS", task.getStatus());
         assertEquals("你提到使用内存屏障，具体是哪类屏障保证了写入可见性？",
                 objectMapper.readTree(task.getOutputPayload()).path("followUp").asText());
+    }
+
+    @Test
+    void schedulerRecoversExpiredLeasesBeforePollingPendingTasks() {
+        AiTask expired = new AiTask();
+        expired.setId(91L);
+        expired.setTaskType(AiTaskService.FOLLOW_UP);
+        when(taskMapper.selectExpiredExhausted(any(), any(Integer.class))).thenReturn(java.util.List.of(91L));
+        when(taskMapper.selectById(91L)).thenReturn(expired);
+        when(taskMapper.failExpiredExhausted(org.mockito.ArgumentMatchers.eq(91L), any())).thenReturn(1);
+        when(taskMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        service.processPendingTasks();
+
+        verify(taskMapper).requeueExpired(any());
+        verify(taskMapper).failExpiredExhausted(org.mockito.ArgumentMatchers.eq(91L), any());
+    }
+
+    @Test
+    void directProcessingReclaimsOneExpiredTaskBeforeClaimingIt() {
+        AiTask expired = new AiTask();
+        expired.setId(92L);
+        expired.setTaskType(AiTaskService.FOLLOW_UP);
+        expired.setStatus("RUNNING");
+        expired.setAttempts(1);
+        expired.setMaxAttempts(3);
+        expired.setLeaseExpiresAt(java.time.LocalDateTime.now().minusMinutes(1));
+        AiTask pending = new AiTask();
+        pending.setId(92L);
+        pending.setStatus("PENDING");
+        pending.setAttempts(1);
+        pending.setMaxAttempts(3);
+        pending.setTaskType(AiTaskService.FOLLOW_UP);
+        pending.setInputPayload("{\"question\":\"q\",\"answer\":\"a\"}");
+        when(taskMapper.selectById(92L)).thenReturn(expired, pending);
+        when(taskMapper.claimPending(any(), anyString(), anyString(), any(), any())).thenReturn(0);
+
+        service.process(92L);
+
+        verify(taskMapper).requeueExpired(any());
+        verify(taskMapper).claimPending(org.mockito.ArgumentMatchers.eq(92L), anyString(), anyString(), any(), any());
     }
 
     private Interview interview() {

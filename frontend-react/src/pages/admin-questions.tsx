@@ -1,5 +1,5 @@
 import { ArrowLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
@@ -120,7 +120,9 @@ export function AdminQuestions() {
     }
   }
 
-  useEffect(() => { void load() }, [id])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect() }, [id])
 
   function openCreate() {
     setEditing(null)

@@ -6,6 +6,96 @@
 
 ## Unreleased
 
+### 文档索引与远程源码基线同步
+
+- 更新 `docs/README.md`：以当前真实代码同步 Spring Boot 4.0.7 / Spring Cloud 2025.1.2 四模块架构、候选人/企业/管理端能力、账户安全、AI Provider 与 OpenTalking 边界、默认 Compose 服务和文档入口。
+- 数据库基线同步为迁移目录实际 36 个版本化脚本、版本 V1 与 V9–V43，最新 `V43__persist_ai_provider_test_status.sql`；新增迁移前必须重新检查目录，若无更高版本则从 V44 开始，已发布 V1–V43 禁止修改。
+- 扩充 `.gitignore` 的源码交付边界，排除本地代理/设计工具目录、嵌套发布暂存副本和 Playwright 调试截图；真实 `.env`、依赖、构建产物、测试报告、用户媒体和运行数据继续不进入仓库。
+- 验证：根 Maven Reactor 313/313 通过（0 failures / 0 errors / 0 skipped），Flyway 验证 37 条历史记录并确认 schema V43；`npx.cmd tsc --noEmit`、`npm.cmd run lint`、`npm.cmd run build`、Compose 配置解析、README 内部链接和 `git diff --check` 通过。前端生产构建仅保留既有 CodeEditor 大分块提示。
+- 未重复执行：Docker Desktop 当前未运行，本步骤未重建容器或追加浏览器运行态验收；本次业务代码对应的最近一次真实容器与浏览器结果仍分别记录在下方各交付条目中。
+
+### 三端站内通知业务跳转
+
+- 新增：站内通知列表接口按当前有效身份返回服务端生成的内部 `actionPath`，招聘申请、AI 面试、面试报告、服务工单和账户安全通知分别映射到候选人端、企业端、管理端可访问的具体页面；报告通知会批量将报告 ID 解析为面试 ID，不产生逐条查询，也不接受通知内容提供任意外部地址。
+- 修复：顶部通知中心不再把企业用户当作管理端或候选人端，三端分别展示“消息通知 / 招聘通知 / 运营通知”及对应说明；点击通知立即使用统一目标跳转并收起面板，已读请求失败不会阻断导航。无关联业务或当前身份没有目标页面的通知仍只标为已读，不误导到跨角色页面。
+- 变更：候选人招聘通知使用 `/applications?applicationId={id}` 并自动打开对应申请详情；企业和管理端账户安全通知新增 `/company/account/security`、`/admin/account/security`，复用现有本人密码、设备和安全事件能力，仍由既有登录权限保护。未新增数据库字段或 Flyway 迁移。
+- 测试：新增 3 组后端角色映射测试与候选人/企业/管理端 3 条通知点击 E2E；根 Maven Reactor 共 313 个测试通过（0 failures / 0 errors / 0 skipped），`npx.cmd tsc --noEmit`、`npm.cmd run lint`、生产构建、Compose 配置和 `git diff --check` 通过，构建仅保留既有 CodeEditor 大分块提示。
+- 页面验收：真实容器中，管理员工单通知进入具体工单详情；候选人招聘通知进入带申请 ID 的页面并自动打开对应详情；企业新申请通知进入具体申请详情。验收只将管理员一条既有通知标为已读并产生三端登录记录，未创建或修改招聘业务数据。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway、OpenTalking 或其他服务，未删除卷；backend 镜像 `sha256:9dac99d3cf4de0336d194ef67706a89049ef53a3acc1d1090b58664090d164ef` 健康，frontend 镜像 `sha256:fe30bd03b590889cd010016280fad5672925604c4bf5d1983f37037515ce77d5` 正常运行。Nginx 配置、新通知中心资源和三端目标路由均已核验，未提交、未推送。
+
+### OpenTalking 测试状态持久化
+
+- 修复：运行健康页的“OpenTalking 上游”不再固定显示“待测试”。Provider 测试完成后，服务端持久保存最近一次成功、失败或超时状态、HTTP 状态、耗时、脱敏摘要和测试时间；AI 中心、系统设置与运行健康刷新后读取同一权威结果。
+- 变更：Provider 配置保存、启停或默认项调整后自动清除旧测试状态并回到“待测试”，避免将配置变更前的成功结果误认为当前可用；运行健康页同时显示最近测试时间和处理建议，仍不返回上游地址、密钥或原始响应。
+- 数据库迁移：新增 Flyway V43 `persist_ai_provider_test_status`，仅为 `ai_provider_config` 增加最近测试状态字段，不修改已有迁移和 Provider 密钥。当前本地运行库已从 V42 成功迁移到 V43。
+- 测试：新增测试结果持久化、配置变更失效以及运行健康成功/待测试映射测试；根 Maven Reactor 共 310 个测试通过（0 failures / 0 errors / 0 skipped），`npx.cmd tsc --noEmit`、`npm.cmd run lint`、`npm.cmd run build`、Compose 配置检查与 `git diff --check` 通过，生产构建仅保留既有 CodeEditor 大分块提示。
+- 页面验收：真实管理员在 AI 中心执行 OpenTalking 测试返回 HTTP 200；刷新 AI 中心后仍显示“测试通过”，进入运行健康后 OpenTalking 卡片显示“测试通过”、最近耗时与测试时间，无横向溢出。该测试新增一条脱敏审计记录及当前 Provider 的测试状态，不修改 Provider 配置。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway、OpenTalking 或其他服务，未删除卷；最终 backend 镜像 `sha256:efa722300f41a07a6fa02929b12b426a27a2b7b50d2c9edcea46115c76244a01` 健康，frontend 镜像 `sha256:d70ce3a96a5eb5fa1419dffc7e7ec5886ae2b070ffd7e5ce65aa0a3050064051` 正常运行。Nginx 配置、实际服务包和 `/admin/ai-operations`、`/admin/operations` 路由均已核验；backend 重启后 OpenTalking 的“测试通过”仍保持。未提交、未推送。
+
+### 管理端候选人档案与操作列统一
+
+- 新增：管理员候选人详情改为服务端聚合的最新档案视图，新增 `GET /v1/admin/candidates/{id}` 与受保护头像接口，集中返回账号状态、联系方式验证、登录方式、资料完整度、简历、岗位申请、面试和报告；查询严格限定候选人本人数据，非候选人访问返回 404。
+- 变更：`/admin/candidates/:id` 按“身份与账户 → 招聘进程 → 简历 → 岗位申请 → 面试与报告”重组信息层级，补充身份冲突提醒、资料缺失状态、分数趋势和可继续操作的面试/报告链接。历史 `ADMIN + CANDIDATE` 账号只提示人工纠正，本次不擅自修改真实角色或业务数据。
+- 变更：新增管理端列表共享操作组件，将候选人、用户、员工、企业、工单、算法题、招聘和面试列表中的同类操作统一为 40px 高、14px/600 字重、固定图标间距且不换行的按钮；详情文案统一为“查看详情”，账号状态文案统一为“启用 / 停用”，停用前统一二次确认说明。
+- 测试：新增候选人聚合服务测试；根 Maven Reactor 共 306 个测试通过（0 failures / 0 errors / 0 skipped），最终针对性后端测试、`npx.cmd tsc --noEmit`、`npm.cmd run lint`、前端生产构建、Compose 配置检查和 `git diff --check` 均通过，构建仅保留既有 CodeEditor 大分块提示。
+- 页面验收：真实管理员登录态确认候选人 10 的最新账号资料、4 场面试和 4 份报告正确展示，身份冲突提示可进入账号详情；候选人、用户和员工列表的“查看详情 / 停用”计算样式一致，停用确认文案一致。桌面、深色模式与 390px 窄屏均无横向溢出，浏览器控制台无 error。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway 或其他服务，未删除卷；backend 镜像 `sha256:81b3fc724151fa807108573593d4da3b5a681cb02bc3bbf651b26e173b19a870` 健康，frontend 镜像 `sha256:88c1d0d817d289937de7750106647693d88c822a8d82061b7354fecf17e9bd38` 正常运行，Nginx 配置检查通过，实际资源包含候选人新详情与共享操作组件，`/admin/candidates/10`、`/admin/candidates` 均返回 200。未新增 Flyway 迁移，未提交、未推送。
+
+### 候选人固定身份与后台权限隔离
+
+- 变更：角色权限页将 `CANDIDATE` 从可勾选的后台权限矩阵调整为只读的固定身份说明，明确展示求职投递、本人面试与报告、练习成长和本人账户四类候选人端能力；候选人不再显示后台权限复选框或“保存权限”，其他平台与企业角色仍保留原 26 项权限矩阵和保存流程。
+- 安全：服务端拒绝为候选人分配任何后台权限并返回 403，角色查询也不会暴露历史残留的候选人权限关系。认证入口对包含 `CANDIDATE` 的历史混合身份按最小权限收敛为仅候选人，不再签发其他 `ROLE_*`、任意 `PERM_*` 或企业归属，避免前端入口隐藏但后端仍残留授权。
+- 数据库迁移：新增 Flyway V42 `fix_candidate_permission_boundary`，删除 `CANDIDATE` 的历史 `role_permission` 关系、递增候选人角色版本，并提升所有候选人账号的 `security_version` 使旧 Access Token 失效；运行库已从 V41 成功迁移到 V42，候选人后台权限关系为 0、角色版本为 2。
+- 测试：新增候选人权限写入拒绝、角色响应清理、登录权限关闭和历史混合身份收敛测试；完整 backend Maven 286/286 通过，`npx.cmd tsc --noEmit`、`npm.cmd run lint`、`npm.cmd run build` 与 `git diff --check` 通过，生产构建仅保留既有 CodeEditor 大分块提示。
+- 页面验收：真实管理员登录态确认候选人视图为 0 个复选框、0 个保存按钮，切回管理员后恢复 26 个复选框和保存按钮；桌面与 390px 窄屏均无横向溢出，浏览器控制台无 error。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway 或其他服务，未删除卷；backend 镜像 `sha256:9f57ab040bd7bd7da7ebbfe1489834753c700b7d4d676ad7566ad21caac5896c` 健康，frontend 镜像 `sha256:2f58edc145ec1c4de2e7070115b7c414b1068ef917153e0691e36367f5a80503` 正常运行，Nginx 实际资源包含“固定身份能力”，`/admin/roles` 返回 200。未提交、未推送。
+
+### 管理端用户导航与平台员工详情
+
+- 变更：管理端顶栏“租户”更名为“用户”，二级菜单固定为“企业管理、用户与账号、员工管理、候选人档案、角色与权限”；保留原企业、账号、候选人和权限路由，在其间新增 `/admin/employees` 与 `/admin/employees/:id`，其他业务域排序不变。
+- 新增：员工管理提供服务端分页、姓名/账号/邮箱搜索、平台角色和状态筛选、启停操作以及员工详情入口；详情页按现有管理端规格展示基础账号、联系信息、登录状态、平台职责摘要、角色分配和当前生效权限，并保留“查看账号全景”进入通用用户详情。
+- 安全：新增管理员接口 `GET /v1/admin/employees` 与 `GET /v1/admin/employees/{id}`。平台员工必须未绑定企业、至少拥有一个有效平台角色，且不得包含 `CANDIDATE` 或任一企业角色；候选人、企业成员和历史越域账号均不会进入员工名册，直接访问其员工详情返回 404。员工职责编辑只展示平台角色，最终仍由既有 `RoleAssignmentPolicy`、最后管理员保护和会话撤销机制校验。
+- 设计：复用现有暖色语义 Token、4px 间距、卡片边框、统一按钮尺寸与字体，不新增平行视觉体系；员工详情将“平台职责”与“用户账号全景”分层，未虚构当前数据模型无法保存的部门、工号或职位字段。桌面和 390px 窄屏均验证正常折叠、无横向溢出、控制台无 error。
+- 测试：完整 backend Maven 280/280 通过；`npx.cmd tsc --noEmit`、`npm.cmd run lint`、`npm.cmd run build`、`git diff --check` 通过，生产构建仅保留既有 CodeEditor 大分块提示。浏览器确认顶栏和侧栏顺序、员工 5 人名册、`INTERVIEWER` 筛选返回 3 人、员工详情职责/权限展示以及 `/admin/employees/10` 身份隔离。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway 或其他服务，未删除卷；backend 镜像 `sha256:2814dd258bb4d3611fdcbf864ff808438013efc0934e078078a65132e7e2c8cc` 健康，frontend 镜像 `sha256:cbb4736dc4bcb27ca83b5021574503cc727ba6170c93ad315138771e4e99e01a` 正常运行，Nginx 实际资源包含“平台员工名册”，`/admin/employees` 返回 200。未新增 Flyway 迁移，未修改真实账号角色，未提交、未推送。
+
+### 角色身份域与分配安全边界
+
+- 新增：用户角色分配按身份域执行统一规则：`CANDIDATE` 必须独占，不能与平台或企业角色并存；`ADMIN`、`HR`、`INTERVIEWER` 及自定义平台角色可按职责组合，保留现有 `ADMIN + HR` 合法账号；`COMPANY_ADMIN`、`COMPANY_RECRUITER`、`COMPANY_INTERVIEWER` 仅允许绑定企业并可在企业域内组合。创建用户与调整角色共用同一前端策略，服务端 `RoleAssignmentPolicy` 作为不可绕过的最终校验。
+- 变更：角色选择器按“候选人身份 / 平台人员 / 企业成员”分组，显示当前身份域；不兼容角色禁用并展示原因，历史冲突组合仍允许逐项取消但禁止保存。创建用户弹窗同步使用相同分组、禁用状态和错误反馈，未改变既有角色代码、权限矩阵、接口路径与企业归属模型。
+- 安全：平台管理入口补齐“最后一个可用企业管理员”并发锁保护，不能再绕过企业成员入口移除或停用最后管理员；平台用户与企业成员的角色实际发生变化时递增 `security_version` 并以 `ROLES_CHANGED` 撤销该用户全部 Refresh Token，使其原 Access Token 与刷新会话同时失效，重新登录后才获得最新身份。未变化的重复保存不改安全版本、不撤销会话。
+- 数据核对：运行库现有组合包括 2 个 `ADMIN + HR`、企业侧 `COMPANY_ADMIN + COMPANY_RECRUITER`，均按规则保留；唯一越域数据为用户 10 的 `ADMIN + CANDIDATE`，本次未擅自改写其角色，管理详情页会明确提示并要求人工选择正确身份。
+- 测试：新增候选人独占、平台角色兼容、企业域组合、最后企业管理员保护与角色变化会话失效测试；完整 backend Maven 278/278 通过，`npx.cmd tsc --noEmit`、`npm.cmd run lint`（0 errors，0 warnings）、`npm.cmd run build`、`git diff --check` 通过，生产构建仅保留既有 CodeEditor 大分块提示。
+- 运行态验证：仅重建并以 `--no-deps` 替换 backend/frontend，未重启 MySQL、Redis、Gateway 或其他服务，未删除卷；backend 镜像 `sha256:ddb0b69c07fc759bdaf6845c10e38cf45aa233f3ed0f9e9117802a7848969e7c` 健康，frontend 镜像 `sha256:f0c75efe3aaf825f151d08b303676cfdeef04694459d05a2da1e439dd23a9b8a` 正常运行，Nginx 包含新角色选择器且 `/admin/users/10` 返回 200。真实 API 确认 `ADMIN + CANDIDATE` 返回 400、移除最后企业管理员返回 409；浏览器确认历史冲突提示、禁用原因、纠正后可保存以及创建用户候选人独占交互。未新增 Flyway 迁移，未修改真实角色数据，未提交、未推送。
+
+### 操作按钮、Provider 测试反馈与管理端运维导航
+
+- 变更：共享 `Button` 收敛为紧凑 40px、默认 44px、大按钮 48px 和对应图标按钮规格，统一使用 14px、600 字重、圆角、边框、焦点环和禁用状态；兼容既有页面的 `h-8/h-9/h-10/h-12` 写法并归并到标准档位，避免批量页面逐个覆盖。修复全局 `button { font: inherit }` 覆盖组件字号和字重的问题；标签页、表格行、PDF 批注等非通用操作控件保持原交互语义。
+- 修复：管理端“系统设置”和“AI 中心”的 Provider 测试在当前 Provider 卡片内即时显示测试中、成功、失败或超时，并展示 HTTP 状态、耗时和安全摘要，不再只在页面顶部显示结果；OpenTalking 本地代理上游由错误的 `8000` 修正为实际服务端口 `8210`。
+- 变更：管理端“平台设置”和“服务工单”从“平台/业务”迁入“运维”，运维二级菜单依次为运行状态、平台设置、服务工单、操作审计；原路由、权限和接口保持不变。
+- 测试：`npx.cmd tsc --noEmit`、`npm.cmd run lint`（0 errors，0 warnings）、`npm.cmd run build`、`git diff --check` 与 Compose 配置校验通过。Playwright 完整回归 18/18 通过，新增运维菜单归属和 Provider 卡片内“测试中 → 成功”用例，并同步管理总览当前标题及审计敏感值断言；生产构建仅保留既有 CodeEditor 大分块提示。
+- 运行态验证：使用项目脚本在 WSL 启动 OpenTalking mock API，进程 PID 211，前端 `/opentalking/health` 返回 200 和 `status=ok`；仅重建并以 `--no-deps` 替换 frontend，未重启 backend、MySQL、Redis 或其他容器，未删除卷。运行镜像为 `sha256:8f5e1b02aa94840cd3af59bd2cbf5f26efe3f89b1ba84a3de083dcc95280290e`，Nginx 实际代理至 `192.168.65.254:8210`，服务包包含 Provider 状态组件，`/admin/settings`、`/admin/tickets` 均返回 200。真实管理员浏览器在 1280px 与 390px 下确认按钮计算样式为 40/44px、14px/600、无横向溢出，OpenTalking Provider 测试返回 HTTP 200，控制台无 error。未修改后端代码、数据库结构或 Flyway 迁移；完整 HR E2E 在本地数据库写入了带 `E2E` 前缀的测试企业、成员、岗位、申请、面试和对应审计记录，本次未擅自清理。未提交、未推送。
+
+### 登录落点、导航顺序与头像刷新连续性
+
+- 变更：新增统一的角色导航映射，候选人、企业成员和管理员登录后的默认首页分别与顶部第一项保持一致，为 `/workspace`、`/company`、`/admin/workspace`；已登录用户访问登录页时也使用同一映射，企业招聘员与面试官不再误落到候选人页面。
+- 变更：受保护页面在会话缺失或失效时携带经过同源校验的 `next` 返回登录页，登录成功后只恢复当前角色有权访问的内部目标，非法、跨角色和外部地址均回退到角色首页。`/features` 的“进入平台”保持普通登录入口，“查看招聘岗位”改为未登录先登录后进入 `/jobs`、已登录候选人直接进入 `/jobs`，两种入口不再指向同一页面。
+- 变更：顶部品牌首页、登录默认首页和第一业务域入口共用同一配置，保留候选人、企业端和管理员端现有视觉与业务排序，确保登录落点就是顶部第一个高亮入口。
+- 修复：右上角头像增加按用户隔离、带版本号且有大小上限的本地缩略图缓存，页面首帧先同步恢复缓存头像，再通过受保护接口后台刷新；上传和删除头像会更新缓存版本，退出登录会清除当前用户缓存，无头像或缓存不可用时仍安全降级为姓名首字母。
+- 测试：`npx.cmd tsc --noEmit`、`npm.cmd run lint`（0 errors，0 warnings）、`npm.cmd run build`、`git diff --check` 和 Compose 配置校验通过。新增 5 条导航/头像 Playwright 用例并补跑 4 条密码与会话回归，共 9/9 通过；生产构建仅保留既有 CodeEditor 大分块提示。
+- 运行态验证：仅重建并以 `--no-deps` 替换 frontend，未重启 backend、MySQL、Redis 或其他服务，未删除卷；运行容器使用镜像 `e752abbdb4d0`，Nginx 配置检查通过，实际资源 `index-DWIeFYcS.js` 包含头像缓存与新导航逻辑，`/features`、`/login`、`/jobs`、`/workspace`、`/company`、`/admin/workspace` 均返回 200。真实容器浏览器确认“进入平台”落到 `/login`，“查看招聘岗位”落到 `/login?next=%2Fjobs`。未修改后端接口、权限、数据库或 Flyway 迁移，未提交、未推送。
+
+### 认证、招聘查询与异步任务可靠性优化
+
+- 安全：前端统一请求层在受保护接口返回 401 时使用单飞队列轮换 Refresh Token，并将普通 JSON、Multipart 上传和 Blob 下载统一纳入仅重放一次的续期流程；续期失败或重放后仍为 401 时清理本地会话并回到登录页。后端 Refresh Token 轮换改为带有效期和未撤销条件的原子更新，验证码注册、登录、联系方式变更和密码重置统一使用 Redis Lua 原子比较并消费，避免并发重复使用。
+- 修复：企业申请列表 `interviewStatus=NONE` 使用明确的外层 `job_application.id` 关联线下面试；列表关联的企业、岗位、候选人、简历、AI 面试和线下面试改为批量预取，详情页历史与既有返回结构保持不变。
+- 新增：Flyway V41 `add_ai_task_leases` 为 AI 任务加入认领令牌、Worker 标识、租约到期和心跳字段。调度器会回收超时 RUNNING 任务，未耗尽重试次数的任务重新入队，耗尽任务转为失败并同步修正面试报告、自由面试、简历解析和岗位匹配状态；任务完成写入必须匹配当前认领令牌，避免旧 Worker 覆盖新任务结果。
+- 变更：算法可视化播放器增加运行版本键，新输入、重置和算法切换即使生成相同步数也会回到第 0 步；Monaco 改为 ESM 编辑器核心加 Java 语言按需注册，移除无关 TS/CSS/HTML/JSON Worker。CodeEditor 生产包由约 3.98 MB/1.03 MB gzip 降至约 2.66 MB/689 KB，仍保留核心编辑器大 chunk 提示。
+- 修复：清理前端 12 个页面的 22 条 React Hook 依赖告警。普通列表保持“首次进入、筛选变化或用户点击”原触发语义；心得弹窗、自由面试恢复和面试房间的录制切题、超时提交、断网重试、离页清理与追问恢复使用 React `useEffectEvent` 读取最新状态，避免陈旧闭包或机械补依赖导致重复启动。React/ReactDOM 依赖基线同步为已验证的 19.2.8。
+- 安全：前端锁文件与安装解析统一覆盖 `dompurify` 3.4.13、`nanoid` 3.3.18 和 `postcss` 8.5.26，保留 Monaco 0.56 的 ESM 按需能力，不采用审计工具建议的功能性降级；`npm audit --audit-level=low` 从 4 项降为 0 项。
+- 测试：新增并发令牌轮换、验证码单次消费、招聘 NONE 关联、列表批量加载、任务租约回收和业务失败状态测试。根 Maven Reactor 共 271 个测试通过（0 failures / 0 errors），Flyway 从 V40 成功迁移至 V41；`npx.cmd tsc --noEmit`、`npm.cmd run lint`（0 errors，0 warnings）、`npm.cmd run build`、2 个账户场景 Playwright 文件共 4 条用例、`docker compose -p ainterview config --quiet` 与 `git diff --check` 通过。账户 E2E 补齐有效设备个人资料与安全活动接口桩，确保统一 401 续期逻辑不会被不完整合成会话误触发。
+- 运行态验证：仅重建并以 `--no-deps` 替换 frontend，未重启 backend、MySQL、Redis 或其他服务，未删除卷；运行容器使用镜像 `73dffe85dd9a`，Nginx 实际入口加载 `index-DMAzS2lP.js`，根路径、登录页、算法可视化和候选人面试路由均返回 200。浏览器确认受保护路由会跳转登录页且控制台无 error/warn；真实 `candidate_liu` 登录、本人资料和 28 条面试数据读取通过，验证会话随后正常登出。未执行会持久化创建企业、成员和岗位的完整 HR E2E，未重建本轮后端源码，未执行生产部署。
+
 ### 当前项目结构文档同步
 
 - 根据当前工作区真实代码同步 `docs/project-structure.md`：补充模块化单体、`account`/`admin` 模块、独立 `algorithm-judge-worker`、Cloud Gateway/Registry、候选人账户设置、企业招聘与管理员运营路由，以及当前 OpenTalking 保留边界。

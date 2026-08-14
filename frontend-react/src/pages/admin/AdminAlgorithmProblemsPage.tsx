@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, CheckCircle2, CircleGauge, Database, Loader2, Pencil, Plus, Power, PowerOff, Search, Trash2, X } from 'lucide-react'
 import { AlgorithmEmptyState, AlgorithmPageHeader } from '@/components/algorithm/algorithm-page'
+import { AdminRowActionButton, AdminRowActions } from '@/components/admin/admin-row-actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -250,16 +251,10 @@ export function AdminAlgorithmProblemsPage() {
                   </td>
                   <td data-label="提交/通过" className="px-5 py-4 tabular-nums"><span className="font-semibold">{item.submissionCount}</span><span className="mx-1.5 text-muted-foreground">/</span>{item.acceptedCount}</td>
                   <td data-label="操作" className="px-5 py-4 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={actionBusyId === item.id} aria-busy={actionBusyId === item.id} onClick={() => void openEdit(item)}>
-                        {actionBusyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
-                        {actionBusyId === item.id ? '处理中…' : '编辑'}
-                      </Button>
-                      <Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={actionBusyId === item.id} aria-busy={actionBusyId === item.id} onClick={() => void toggleStatus(item)}>
-                        {actionBusyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : item.status === 1 ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                        {actionBusyId === item.id ? '处理中…' : item.status === 1 ? '停用' : '启用'}
-                      </Button>
-                    </div>
+                    <AdminRowActions>
+                      <AdminRowActionButton label="编辑" icon={Pencil} busy={actionBusyId === item.id} onClick={() => void openEdit(item)} />
+                      <AdminRowActionButton label={item.status === 1 ? '停用' : '启用'} icon={item.status === 1 ? PowerOff : Power} busy={actionBusyId === item.id} onClick={() => void toggleStatus(item)} className="min-w-[88px]" />
+                    </AdminRowActions>
                   </td>
                 </tr>
               ))}

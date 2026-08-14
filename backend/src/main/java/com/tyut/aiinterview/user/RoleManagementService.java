@@ -111,6 +111,10 @@ public class RoleManagementService {
     @Transactional
     public RoleDtos.RoleVO assignPermissions(Long id, RoleDtos.AssignPermissionsRequest request) {
         Role role = requireRole(id);
+        if (RoleAssignmentPolicy.CANDIDATE_ROLE.equals(role.getRoleCode())) {
+            auditDenied("ROLE_PERMISSIONS_UPDATED", id, "候选人身份不参与后台权限矩阵");
+            throw BusinessException.forbidden("候选人能力由身份和本人资源边界固定控制，不支持分配后台权限");
+        }
         List<Long> permissionIds = request.permissionIds().stream().distinct().sorted().toList();
         List<Permission> permissions = permissionMapper.selectBatchIds(permissionIds);
         if (permissions.size() != permissionIds.size()) throw BusinessException.badRequest("存在无效权限");
@@ -148,8 +152,10 @@ public class RoleManagementService {
     }
 
     private RoleDtos.RoleVO toVO(Role role) {
-        List<Long> permissionIds = rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>().eq(RolePermission::getRoleId, role.getId())).stream()
-                .map(RolePermission::getPermissionId).distinct().sorted().toList();
+        List<Long> permissionIds = RoleAssignmentPolicy.CANDIDATE_ROLE.equals(role.getRoleCode())
+                ? List.of()
+                : rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>().eq(RolePermission::getRoleId, role.getId())).stream()
+                        .map(RolePermission::getPermissionId).distinct().sorted().toList();
         long affected = adminUserMapper == null ? 0 : adminUserMapper.countUsersByRoleId(role.getId());
         return new RoleDtos.RoleVO(role.getId(), role.getRoleCode(), role.getRoleName(), role.getDescription(), role.getStatus(), permissionIds,
                 SYSTEM_ROLE_CODES.contains(role.getRoleCode()), affected, role.getVersion() == null ? 0 : role.getVersion());

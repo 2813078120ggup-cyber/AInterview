@@ -87,6 +87,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, input, textarea, select { font: inherit; }
+button[data-ui="button"] {
+  font-family: var(--font-sans);
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1;
+}
 button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
 img, video, canvas { max-width: 100%; }
 

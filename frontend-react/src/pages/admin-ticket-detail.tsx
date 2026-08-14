@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Loader2, MessageCircle, Send, UserRound } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -28,12 +28,15 @@ export function AdminTicketDetail() {
     catch (reason) { setError(reason instanceof Error ? reason.message : '工单加载失败') }
     finally { setBusy(false) }
   }
-  useEffect(() => { load(); listAssignees().then(setAssignees).catch(() => setAssignees([])) }, [id])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect(); void listAssignees().then(setAssignees).catch(() => setAssignees([])) }, [id])
+  const ticketStatus = detail?.ticket.status
   useEffect(() => {
-    if (!detail || detail.ticket.status === 'CLOSED') return
+    if (!ticketStatus || ticketStatus === 'CLOSED') return
     const timer = window.setInterval(async () => { try { const next = await listActivities(id, latestId.current || undefined); if (!next.length) return; setActivities(previous => [...previous, ...next]); latestId.current = next.at(-1)?.id || latestId.current; await markTicketRead(id, latestId.current) } catch { /* retry next interval */ } }, 3000)
     return () => window.clearInterval(timer)
-  }, [id, detail?.ticket.status])
+  }, [id, ticketStatus])
 
   async function assign(value: string) {
     if (!detail || actionBusy) return

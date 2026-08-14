@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export function useAlgorithmPlayer(stepCount: number) {
+export function useAlgorithmPlayer(stepCount: number, runKey: string | number) {
   const [currentStep, setCurrentStep] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -8,7 +8,7 @@ export function useAlgorithmPlayer(stepCount: number) {
   useEffect(() => {
     setCurrentStep(0)
     setPlaying(false)
-  }, [stepCount])
+  }, [runKey, stepCount])
 
   useEffect(() => {
     if (!playing || stepCount <= 1) return

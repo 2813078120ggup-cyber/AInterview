@@ -6,16 +6,26 @@ const profile = { id: '11', username: 'candidate_e2e', realName: '双设备候�
 
 async function establishSyntheticSession(context: BrowserContext, accessToken: string, refreshToken: string) {
   await context.addInitScript(({ accessToken, refreshToken, profile }) => {
+    if (localStorage.getItem('e2e_session_seeded')) return
     localStorage.setItem('access_token', accessToken)
     localStorage.setItem('refresh_token', refreshToken)
     localStorage.setItem('ai_interview_profile', JSON.stringify(profile))
+    localStorage.setItem('e2e_session_seeded', '1')
   }, { accessToken, refreshToken, profile })
 }
 
-async function mockWorkspaceShell(page: Page) {
+async function mockWorkspaceShell(page: Page, mockProfile = false) {
   await page.route('**/api/v1/notifications/unread-count', route => route.fulfill({ json: { data: 0 } }))
   await page.route('**/api/v1/notifications**', route => route.fulfill({ json: { data: { records: [], total: 0, pageNo: 1, pageSize: 20 } } }))
   await page.route('**/api/v1/account/sessions', route => route.fulfill({ json: { data: [] } }))
+  await page.route('**/api/v1/account/security-events**', route => route.fulfill({
+    json: { data: { records: [], total: 0, pageNo: 1, pageSize: 15 } },
+  }))
+  if (mockProfile) {
+    await page.route('**/api/v1/account/profile', route => route.fulfill({
+      json: { data: { realName: profile.realName, avatarAvailable: false } },
+    }))
+  }
 }
 
 test('password change rotates device A and rejects device B old access token', async ({ browser, baseURL }) => {
@@ -26,7 +36,7 @@ test('password change rotates device A and rejects device B old access token', a
   await deviceB.addInitScript(() => localStorage.setItem('interviewos-theme', 'dark'))
   const pageA = await deviceA.newPage()
   const pageB = await deviceB.newPage()
-  await mockWorkspaceShell(pageA)
+  await mockWorkspaceShell(pageA, true)
   await mockWorkspaceShell(pageB)
 
   await pageA.route('**/api/v1/account/password/change', async route => {
@@ -42,6 +52,10 @@ test('password change rotates device A and rejects device B old access token', a
     expect(route.request().headers().authorization).toBe('Bearer access-b-old')
     return route.fulfill({ status: 401, json: { code: 40100, message: '登录已失效' } })
   })
+  await pageB.route('**/api/v1/auth/refresh', route => {
+    expect(route.request().postDataJSON()).toEqual({ refreshToken: 'refresh-b-old' })
+    return route.fulfill({ status: 401, json: { code: 40100, message: '刷新令牌已失效' } })
+  })
 
   await pageA.goto(`${baseURL}/candidate/settings/security?context=recruitment`)
   await expect(pageA).toHaveURL(/\/candidate\/settings\/security\?context=recruitment$/)
@@ -56,8 +70,9 @@ test('password change rotates device A and rejects device B old access token', a
   expect(await pageA.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
   await pageB.goto(`${baseURL}/candidate/settings/profile?context=recruitment`)
-  await expect(pageB.getByText('账户资料暂时不可用')).toBeVisible()
-  await expect(pageB.getByText('登录已失效')).toBeVisible()
+  await expect(pageB).toHaveURL(/\/login\?next=%2Fcandidate%2Fsettings%2Fprofile%3Fcontext%3Drecruitment$/)
+  await expect.poll(() => pageB.evaluate(() => localStorage.getItem('access_token'))).toBeNull()
+  await expect.poll(() => pageB.evaluate(() => localStorage.getItem('refresh_token'))).toBeNull()
   expect(await pageB.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true)
   expect(await pageB.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 

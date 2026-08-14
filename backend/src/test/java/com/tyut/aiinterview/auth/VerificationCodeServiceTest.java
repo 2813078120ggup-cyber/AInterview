@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.utils.TokenHashUtils;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.client.RestClient;
+import org.springframework.data.redis.core.script.RedisScript;
 
 class VerificationCodeServiceTest {
     private StringRedisTemplate redis;
@@ -57,13 +59,14 @@ class VerificationCodeServiceTest {
 
     @Test
     void crossPurposeVerificationCannotReuseAnotherPurposeCode() {
-        when(values.get(anyString())).thenReturn(null);
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(0L);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.verifyChangeCode(11L, "CHANGE_PHONE", "13800000000", "123456"));
 
         assertEquals(400, exception.getStatus().value());
-        verify(values).get("auth:account-code:11:CHANGE_PHONE:" + TokenHashUtils.sha256("13800000000") + ":code");
+        verify(redis).execute(any(RedisScript.class), eq(java.util.List.of(
+                "auth:account-code:11:CHANGE_PHONE:" + TokenHashUtils.sha256("13800000000") + ":code")), eq("123456"));
     }
 
     @Test
@@ -95,20 +98,21 @@ class VerificationCodeServiceTest {
 
     @Test
     void passwordResetCannotReuseLoginOrContactCode() {
-        when(values.get(anyString())).thenReturn(null);
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(0L);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.verifyPasswordResetCode(11L, "sms", "13800000000", "123456"));
 
         assertEquals(400, exception.getStatus().value());
-        verify(values).get("auth:password-reset-code:11:PASSWORD_RESET:sms:"
-                + TokenHashUtils.sha256("13800000000") + ":code");
+        verify(redis).execute(any(RedisScript.class), eq(java.util.List.of(
+                "auth:password-reset-code:11:PASSWORD_RESET:sms:"
+                        + TokenHashUtils.sha256("13800000000") + ":code")), eq("123456"));
     }
 
     @Test
     void passwordResetFailureLimitDeletesCode() {
         properties.setMaxPasswordResetVerifyFailures(2);
-        when(values.get(anyString())).thenReturn("654321");
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(-1L);
         when(values.increment(anyString())).thenReturn(2L);
         String prefix = "auth:password-reset-code:11:PASSWORD_RESET:sms:"
                 + TokenHashUtils.sha256("13800000000");
@@ -129,5 +133,23 @@ class VerificationCodeServiceTest {
 
         assertEquals(400, exception.getStatus().value());
         assertEquals("验证码发送过于频繁，请稍后再试", exception.getMessage());
+    }
+
+    @Test
+    void loginCodeIsConsumedAtomically() {
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(1L);
+
+        service.verifyLoginCode("sms", "13800000000", "123456");
+
+        verify(redis).execute(any(RedisScript.class), any(java.util.List.class), eq("123456"));
+        verify(values, never()).get(anyString());
+    }
+
+    @Test
+    void alreadyConsumedLoginCodeIsRejected() {
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(0L);
+
+        assertThrows(BusinessException.class,
+                () -> service.verifyLoginCode("sms", "13800000000", "123456"));
     }
 }

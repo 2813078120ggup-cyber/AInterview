@@ -32,8 +32,16 @@ __MACOSX/
 # Env
 .env
 
-# Local agent tooling
+# Local agent and design tooling
 .kilo/
+.agents/
+.codex/
+.impeccable/
+.interface-design/
+$releaseRoot/
+
+# Local browser and debug artifacts
+frontend-react/playwright-*.png
 
 # Upload files
 uploads/

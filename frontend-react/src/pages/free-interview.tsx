@@ -13,7 +13,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
@@ -129,11 +129,13 @@ export function FreeInterview() {
     browserRecognition.current?.abort?.()
   }, [])
 
+  const recoverEffect = useEffectEvent(recover)
+
   useEffect(() => {
     const activeId = requestedSessionId || localStorage.getItem(activeSessionKey)
     if (!activeId || recoverySessionId.current === activeId) return
     recoverySessionId.current = activeId
-    void recover(activeId)
+    void recoverEffect(activeId)
   }, [requestedSessionId])
 
   async function api<T>(path: string, init: RequestInit = {}) {

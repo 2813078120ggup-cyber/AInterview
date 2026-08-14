@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.user;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.common.PageResult;
 import com.tyut.aiinterview.domain.Company;
@@ -15,6 +16,7 @@ import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.mapper.UserRoleMapper;
 import com.tyut.aiinterview.observability.OperationAuditService;
 import com.tyut.aiinterview.security.CurrentUser;
+import com.tyut.aiinterview.security.RefreshTokenService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -30,7 +32,6 @@ import org.springframework.util.StringUtils;
 @Service
 public class UserManagementService {
     private static final String ADMIN_ROLE = "ADMIN";
-    private static final Set<String> COMPANY_ROLES = Set.of("COMPANY_ADMIN", "COMPANY_RECRUITER", "COMPANY_INTERVIEWER");
 
     private final UserMapper userMapper;
     private final UserRoleMapper userRoleMapper;
@@ -40,22 +41,31 @@ public class UserManagementService {
     private final CompanyMapper companyMapper;
     private final AdminUserMapper adminUserMapper;
     private final OperationAuditService auditService;
+    private final RefreshTokenService refreshTokenService;
 
     public UserManagementService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
                                  PasswordEncoder passwordEncoder, CurrentUser currentUser) {
-        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, null, null, null);
+        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, null, null, null, null);
     }
 
     public UserManagementService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
                                  PasswordEncoder passwordEncoder, CurrentUser currentUser,
                                  OperationAuditService auditService) {
-        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, null, null, auditService);
+        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, null, null, auditService, null);
+    }
+
+    public UserManagementService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
+                                 PasswordEncoder passwordEncoder, CurrentUser currentUser, CompanyMapper companyMapper,
+                                 AdminUserMapper adminUserMapper, OperationAuditService auditService) {
+        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, companyMapper, adminUserMapper,
+                auditService, null);
     }
 
     @Autowired
     public UserManagementService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
                                  PasswordEncoder passwordEncoder, CurrentUser currentUser, CompanyMapper companyMapper,
-                                 AdminUserMapper adminUserMapper, OperationAuditService auditService) {
+                                 AdminUserMapper adminUserMapper, OperationAuditService auditService,
+                                 RefreshTokenService refreshTokenService) {
         this.userMapper = userMapper;
         this.userRoleMapper = userRoleMapper;
         this.roleMapper = roleMapper;
@@ -64,15 +74,24 @@ public class UserManagementService {
         this.companyMapper = companyMapper;
         this.adminUserMapper = adminUserMapper;
         this.auditService = auditService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     public PageResult<UserDtos.UserVO> page(UserDtos.UserQuery query) {
+        return page(query, false);
+    }
+
+    public PageResult<UserDtos.UserVO> employeePage(UserDtos.UserQuery query) {
+        return page(query, true);
+    }
+
+    private PageResult<UserDtos.UserVO> page(UserDtos.UserQuery query, boolean platformEmployeeOnly) {
         UserDtos.UserQuery normalized = query == null ? new UserDtos.UserQuery(1L, 20L, null, null) : query;
         long pageNo = normalized.pageNo() == null ? 1 : Math.max(1, normalized.pageNo());
         long pageSize = normalized.pageSize() == null ? 20 : Math.min(100, Math.max(1, normalized.pageSize()));
         LocalDateTime createdFrom = parseDate(normalized.createdFrom(), false);
         LocalDateTime createdToExclusive = parseDate(normalized.createdTo(), true);
-        if (adminUserMapper == null) {
+        if (adminUserMapper == null && !platformEmployeeOnly) {
             LambdaQueryWrapper<UserAccount> wrapper = new LambdaQueryWrapper<UserAccount>().orderByDesc(UserAccount::getCreatedAt);
             if (StringUtils.hasText(normalized.keyword())) wrapper.and(item -> item.like(UserAccount::getUsername, normalized.keyword()).or().like(UserAccount::getRealName, normalized.keyword()));
             if (normalized.status() != null) wrapper.eq(UserAccount::getStatus, normalized.status());
@@ -81,9 +100,11 @@ public class UserManagementService {
         }
         String roleCode = StringUtils.hasText(normalized.roleCode()) ? normalized.roleCode().trim().toUpperCase(Locale.ROOT) : null;
         long offset = (pageNo - 1) * pageSize;
+        if (adminUserMapper == null) throw BusinessException.badRequest("员工查询不可用");
         List<AdminUserRow> rows = adminUserMapper.selectPage(normalized.keyword(), roleCode, normalized.companyId(), normalized.status(),
-                createdFrom, createdToExclusive, offset, pageSize);
-        long total = adminUserMapper.count(normalized.keyword(), roleCode, normalized.companyId(), normalized.status(), createdFrom, createdToExclusive);
+                createdFrom, createdToExclusive, offset, pageSize, platformEmployeeOnly);
+        long total = adminUserMapper.count(normalized.keyword(), roleCode, normalized.companyId(), normalized.status(),
+                createdFrom, createdToExclusive, platformEmployeeOnly);
         return PageResult.of(rows.stream().map(this::toVO).toList(), total, pageNo, pageSize);
     }
 
@@ -92,6 +113,13 @@ public class UserManagementService {
         AdminUserRow row = adminUserMapper.selectById(userId);
         if (row == null) throw BusinessException.notFound("用户不存在");
         return toVO(row);
+    }
+
+    public UserDtos.UserVO employeeDetail(Long userId) {
+        if (adminUserMapper == null || adminUserMapper.countPlatformEmployeeById(userId) == 0) {
+            throw BusinessException.notFound("平台员工不存在");
+        }
+        return detail(userId);
     }
 
     public List<UserDtos.UserOption> candidates(String keyword) {
@@ -135,6 +163,9 @@ public class UserManagementService {
             auditDenied("USER_STATUS_UPDATED", userId, user.getCompanyId(), "禁止停用最后一个超级管理员");
             throw BusinessException.conflict("不能停用最后一个超级管理员");
         }
+        if (request.status() == 0 && roles.contains(RoleAssignmentPolicy.COMPANY_ADMIN_ROLE)) {
+            ensureCompanyAdminRemains(user, null, 0, "USER_STATUS_UPDATED");
+        }
         boolean changed = !request.status().equals(user.getStatus());
         if (changed) {
             user.setStatus(request.status());
@@ -152,15 +183,30 @@ public class UserManagementService {
         List<Role> roles = validateRoleIds(request.roleIds());
         validateCompanyBinding(user.getCompanyId(), roles);
         List<String> currentRoles = roleCodes(userId);
+        List<Long> currentIds = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId))
+                .stream().map(UserRole::getRoleId).sorted().toList();
+        List<Long> nextIds = request.roleIds().stream().distinct().sorted().toList();
+        boolean changed = !currentIds.equals(nextIds);
         boolean removesAdmin = currentRoles.contains(ADMIN_ROLE) && roles.stream().noneMatch(item -> ADMIN_ROLE.equals(item.getRoleCode()));
-        if (removesAdmin && activeAdminCountForUpdate() <= 1) {
+        if (changed && removesAdmin && activeAdminCountForUpdate() <= 1) {
             auditDenied("USER_ROLES_UPDATED", userId, user.getCompanyId(), "禁止移除最后一个超级管理员角色");
             throw BusinessException.conflict("不能移除最后一个超级管理员角色");
         }
-        List<Long> currentIds = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId)).stream().map(UserRole::getRoleId).sorted().toList();
-        List<Long> nextIds = request.roleIds().stream().distinct().sorted().toList();
-        if (!currentIds.equals(nextIds)) replaceRoles(userId, nextIds);
-        audit("USER_ROLES_UPDATED", user.getId(), user.getCompanyId(), "更新用户角色");
+        boolean removesCompanyAdmin = currentRoles.contains(RoleAssignmentPolicy.COMPANY_ADMIN_ROLE)
+                && roles.stream().noneMatch(item -> RoleAssignmentPolicy.COMPANY_ADMIN_ROLE.equals(item.getRoleCode()));
+        if (changed && removesCompanyAdmin) {
+            ensureCompanyAdminRemains(user, Set.copyOf(nextIds), null, "USER_ROLES_UPDATED");
+        }
+        if (changed) {
+            replaceRoles(userId, nextIds);
+            user.incrementSecurityVersion();
+            userMapper.updateById(user);
+            if (refreshTokenService != null) {
+                refreshTokenService.revokeAllSessions(userId, "ROLES_CHANGED");
+            }
+        }
+        audit("USER_ROLES_UPDATED", user.getId(), user.getCompanyId(),
+                changed ? "更新用户角色并使原登录会话失效" : "保存用户角色（角色未变化）");
         return detailOrFallback(user);
     }
 
@@ -193,13 +239,38 @@ public class UserManagementService {
     }
 
     private void validateCompanyBinding(Long companyId, List<Role> roles) {
-        boolean hasCompanyRole = roles.stream().anyMatch(item -> COMPANY_ROLES.contains(item.getRoleCode()));
-        if (companyId == null && hasCompanyRole) throw BusinessException.badRequest("企业角色必须绑定企业");
-        if (companyId != null && roles.stream().anyMatch(item -> !COMPANY_ROLES.contains(item.getRoleCode()))) throw BusinessException.badRequest("企业成员只能分配企业角色");
+        RoleAssignmentPolicy.validate(companyId, roles);
         if (companyId != null) {
             if (companyMapper == null) throw BusinessException.badRequest("企业绑定不可用");
             Company company = companyMapper.selectById(companyId);
             if (company == null || company.getStatus() != null && company.getStatus() != 1) throw BusinessException.badRequest("企业不存在或已停用");
+        }
+    }
+
+    /** Locks active members so the platform-admin entry point cannot bypass the final company-admin guard. */
+    private void ensureCompanyAdminRemains(UserAccount target, Set<Long> replacementRoleIds,
+                                           Integer replacementStatus, String auditAction) {
+        if (target.getCompanyId() == null || target.getStatus() != 1) return;
+        List<UserAccount> activeMembers = userMapper.selectList(new LambdaQueryWrapper<UserAccount>()
+                .eq(UserAccount::getCompanyId, target.getCompanyId())
+                .eq(UserAccount::getStatus, 1)
+                .last("FOR UPDATE"));
+        if (activeMembers.isEmpty()) return;
+        Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
+                .eq(Role::getRoleCode, RoleAssignmentPolicy.COMPANY_ADMIN_ROLE)
+                .eq(Role::getStatus, 1));
+        if (adminRole == null) return;
+        Set<Long> activeIds = activeMembers.stream().map(UserAccount::getId).collect(java.util.stream.Collectors.toSet());
+        Set<Long> activeAdminIds = userRoleMapper.selectList(new QueryWrapper<UserRole>()
+                        .eq("role_id", adminRole.getId()).in("user_id", activeIds))
+                .stream().map(UserRole::getUserId).collect(java.util.stream.Collectors.toSet());
+        if (!activeAdminIds.contains(target.getId())) return;
+        boolean remainsActive = replacementStatus == null || replacementStatus == 1;
+        boolean remainsAdmin = replacementRoleIds == null || replacementRoleIds.contains(adminRole.getId());
+        if ((!remainsActive || !remainsAdmin) && activeAdminIds.size() <= 1) {
+            auditDenied(auditAction, target.getId(), target.getCompanyId(),
+                    "禁止移除或停用企业最后一个可用管理员");
+            throw BusinessException.conflict("不能移除或停用企业最后一个可用管理员");
         }
     }
 

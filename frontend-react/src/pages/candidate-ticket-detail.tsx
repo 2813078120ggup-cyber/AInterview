@@ -1,5 +1,5 @@
 import { ArrowLeft, Edit3, MessageCircle, Send } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -31,10 +31,13 @@ export function CandidateTicketDetail() {
     } finally { setBusy(false) }
   }
 
-  useEffect(() => { load() }, [id])
+  const loadEffect = useEffectEvent(load)
 
+  useEffect(() => { void loadEffect() }, [id])
+
+  const ticketStatus = detail?.ticket.status
   useEffect(() => {
-    if (!id || !detail || detail.ticket.status === 'CLOSED') return
+    if (!id || !ticketStatus || ticketStatus === 'CLOSED') return
     const poll = window.setInterval(async () => {
       try {
         const next = await listActivities(id, latestId.current || undefined)
@@ -47,7 +50,7 @@ export function CandidateTicketDetail() {
       }
     }, 3000)
     return () => window.clearInterval(poll)
-  }, [id, detail?.ticket.status])
+  }, [id, ticketStatus])
 
   async function send() {
     if (!content.trim() || !detail) return

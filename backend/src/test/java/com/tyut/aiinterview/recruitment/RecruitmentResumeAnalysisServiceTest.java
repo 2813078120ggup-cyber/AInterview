@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.ai.DeepSeekGateway;
@@ -57,5 +58,22 @@ class RecruitmentResumeAnalysisServiceTest {
         assertEquals("SUCCESS", resume.getParseStatus());
         assertEquals("三年Java后端经验", resume.getSummary());
         assertEquals("[\"Java\",\"Redis\"]", resume.getSkills());
+    }
+
+    @Test
+    void leaseExpiryMarksCurrentResumeAnalysisFailed() {
+        CandidateResumeMapper resumeMapper = mock(CandidateResumeMapper.class);
+        CandidateResumeAnalysisMapper analysisMapper = mock(CandidateResumeAnalysisMapper.class);
+        RecruitmentResumeAnalysisService service = new RecruitmentResumeAnalysisService(resumeMapper, analysisMapper,
+                mock(MediaFileMapper.class), mock(LocalObjectStorage.class), mock(ResumeTextExtractor.class),
+                mock(DeepSeekGateway.class), new ObjectMapper(), mock(ApplicationEventPublisher.class));
+        AiTask task = new AiTask();
+        task.setId(11L);
+        task.setInputPayload("{\"resumeId\":7,\"analysisId\":8,\"analysisVersion\":1}");
+
+        service.markLeaseExpired(task);
+
+        verify(analysisMapper).update(any(), any());
+        verify(resumeMapper).update(any(), any());
     }
 }

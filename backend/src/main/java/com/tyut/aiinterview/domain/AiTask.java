@@ -17,6 +17,10 @@ public class AiTask {
     private Integer maxAttempts;
     private LocalDateTime scheduledAt;
     private LocalDateTime startedAt;
+    private String claimToken;
+    private String lockedBy;
+    private LocalDateTime leaseExpiresAt;
+    private LocalDateTime heartbeatAt;
     private LocalDateTime finishedAt;
     private String inputPayload;
     private String outputPayload;

@@ -112,6 +112,7 @@ app:
     scheduler-enabled: ${AI_TASK_SCHEDULER_ENABLED:true}
     poll-interval-ms: ${AI_TASK_POLL_INTERVAL_MS:1000}
     fetch-limit: ${AI_TASK_FETCH_LIMIT:12}
+    lease-seconds: ${AI_TASK_LEASE_SECONDS:300}
     worker-count: ${AI_TASK_WORKER_COUNT:3}
     worker-queue-capacity: ${AI_TASK_WORKER_QUEUE_CAPACITY:50}
     report-scoring-concurrency: ${REPORT_SCORING_CONCURRENCY:3}

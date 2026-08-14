@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 @Service
 public class VerificationCodeService {
@@ -25,6 +26,13 @@ public class VerificationCodeService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Set<String> CHANGE_PURPOSES = Set.of("CHANGE_PHONE", "CHANGE_EMAIL");
     private static final String PASSWORD_RESET = "PASSWORD_RESET";
+    private static final DefaultRedisScript<Long> CONSUME_CODE_SCRIPT = new DefaultRedisScript<>("""
+            local value = redis.call('GET', KEYS[1])
+            if not value then return 0 end
+            if value ~= ARGV[1] then return -1 end
+            redis.call('DEL', KEYS[1])
+            return 1
+            """, Long.class);
     private final StringRedisTemplate redisTemplate;
     private final RestClient restClient;
     private final JavaMailSender mailSender;
@@ -65,12 +73,9 @@ public class VerificationCodeService {
         if (!StringUtils.hasText(code)) {
             throw BusinessException.badRequest("请输入验证码");
         }
-        String key = codeKey(normalizedPhone);
-        String cachedCode = redisTemplate.opsForValue().get(key);
-        if (!StringUtils.hasText(cachedCode) || !cachedCode.equals(code.trim())) {
+        if (!consumeCode(codeKey(normalizedPhone), code)) {
             throw BusinessException.badRequest("验证码错误或已过期");
         }
-        redisTemplate.delete(key);
     }
 
     public void sendLoginCode(AuthDtos.SendLoginCodeRequest request) {
@@ -102,11 +107,9 @@ public class VerificationCodeService {
         String normalizedChannel = normalizeChannel(channel);
         String normalizedTarget = normalizeLoginTarget(normalizedChannel, target);
         if (!StringUtils.hasText(code)) throw BusinessException.badRequest("请输入验证码");
-        String cachedCode = redisTemplate.opsForValue().get(loginCodeKey(normalizedChannel, normalizedTarget));
-        if (!StringUtils.hasText(cachedCode) || !cachedCode.equals(code.trim())) {
+        if (!consumeCode(loginCodeKey(normalizedChannel, normalizedTarget), code)) {
             throw BusinessException.badRequest("验证码错误或已过期");
         }
-        redisTemplate.delete(loginCodeKey(normalizedChannel, normalizedTarget));
     }
 
     public ChangeCodeResult sendChangeCode(Long userId, String purpose, String target) {
@@ -153,8 +156,7 @@ public class VerificationCodeService {
         if (!StringUtils.hasText(code)) throw BusinessException.badRequest("请输入验证码");
         String prefix = changeKeyPrefix(userId, normalizedPurpose, normalizedTarget);
         String failureKey = prefix + ":failures";
-        String cachedCode = redisTemplate.opsForValue().get(prefix + ":code");
-        if (!StringUtils.hasText(cachedCode) || !cachedCode.equals(code.trim())) {
+        if (!consumeCode(prefix + ":code", code)) {
             Long failures = redisTemplate.opsForValue().increment(failureKey);
             if (failures != null && failures == 1L) {
                 redisTemplate.expire(failureKey, properties.getTtl().toSeconds(), TimeUnit.SECONDS);
@@ -165,7 +167,6 @@ public class VerificationCodeService {
             }
             throw BusinessException.badRequest("验证码错误或已过期");
         }
-        redisTemplate.delete(prefix + ":code");
         redisTemplate.delete(failureKey);
     }
 
@@ -217,8 +218,7 @@ public class VerificationCodeService {
         if (!StringUtils.hasText(code)) throw BusinessException.badRequest("请输入验证码");
         String prefix = passwordResetKeyPrefix(userId, normalizedChannel, normalizedTarget);
         String failureKey = prefix + ":failures";
-        String cachedCode = redisTemplate.opsForValue().get(prefix + ":code");
-        if (!StringUtils.hasText(cachedCode) || !cachedCode.equals(code.trim())) {
+        if (!consumeCode(prefix + ":code", code)) {
             Long failures = redisTemplate.opsForValue().increment(failureKey);
             if (failures != null && failures == 1L) {
                 redisTemplate.expire(failureKey, properties.getTtl().toSeconds(), TimeUnit.SECONDS);
@@ -229,7 +229,6 @@ public class VerificationCodeService {
             }
             throw BusinessException.badRequest("验证码错误或已过期");
         }
-        redisTemplate.delete(prefix + ":code");
         redisTemplate.delete(failureKey);
     }
 
@@ -256,6 +255,11 @@ public class VerificationCodeService {
             return mailSender != null && StringUtils.hasText(properties.getMailFrom());
         }
         return false;
+    }
+
+    private boolean consumeCode(String key, String submittedCode) {
+        Long result = redisTemplate.execute(CONSUME_CODE_SCRIPT, java.util.List.of(key), submittedCode.trim());
+        return Long.valueOf(1L).equals(result);
     }
 
     private void sendSms(String phoneNumber, String code) {

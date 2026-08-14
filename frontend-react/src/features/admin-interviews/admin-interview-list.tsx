@@ -1,8 +1,8 @@
 import { Bell, CheckCircle2, Eye, FileChartColumn, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { AdminRowActionButton, AdminRowActionLink, AdminRowActions } from '@/components/admin/admin-row-actions'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { canViewReport, INTERVIEW_STATUS, interviewStatusText, interviewStatusTone, isReportPending } from '@/lib/interview-status'
 import type { Candidate, InterviewRow, ReportItem } from './admin-interviews-api'
 
@@ -21,7 +21,6 @@ type Props = {
 }
 
 export function AdminInterviewList({ items, reports, candidates, loading, onNotice, onAction, onReport }: Props) {
-  const nav = useNavigate()
   const [openActions, setOpenActions] = useState<string>()
 
   return (
@@ -45,9 +44,7 @@ export function AdminInterviewList({ items, reports, candidates, loading, onNoti
               return <tr key={item.id} className="border-b border-border/70 last:border-0 hover:bg-muted/30">
                 <td data-label="面试主题" className="break-words px-5 py-5 font-semibold">{item.title}</td>
                 <td data-label="候选人" className="px-5 py-5">
-                  <button type="button" onClick={() => person && nav(`/admin/candidates/${person.id}`)} className="font-medium hover:text-[var(--accent)]">
-                    {person?.realName ?? `候选人 #${item.candidateId}`}
-                  </button>
+                  {person ? <Link to={`/admin/candidates/${person.id}`} className="rounded font-medium hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">{person.realName}</Link> : <span className="font-medium">候选人 #{item.candidateId}</span>}
                   <p className="mt-1 text-xs text-muted-foreground">{person?.username}</p>
                 </td>
                 <td data-label="预约时间" className="px-5 py-5 text-muted-foreground">{dateText(item.scheduledAt)}</td>
@@ -56,10 +53,10 @@ export function AdminInterviewList({ items, reports, candidates, loading, onNoti
                   {report ? <Badge className="shrink-0" tone="success">已生成 · {report.totalScore} 分</Badge> : isReportPending(item.status) ? <Badge className="shrink-0" tone="warning">生成中</Badge> : <span className="whitespace-nowrap text-xs text-muted-foreground">面试结束后生成</span>}
                 </td>
                 <td data-label="操作" className="relative px-5 py-5 align-middle">
-                  <div className="grid grid-cols-[68px_72px] justify-end gap-2">
-                    <Button variant="secondary" className="h-9 w-full gap-1 whitespace-nowrap px-2 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" onClick={() => nav(`/admin/interviews/${item.id}/review`)} title="查看回顾"><Eye className="hidden h-3.5 w-3.5 xl:block" />回顾</Button>
+                  <AdminRowActions>
+                    <AdminRowActionLink to={`/admin/interviews/${item.id}/review`} icon={Eye} />
                     <div className="relative">
-                      <Button variant="secondary" className="h-9 w-full gap-1 whitespace-nowrap px-2 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" onClick={() => setOpenActions(current => current === String(item.id) ? undefined : String(item.id))} title="更多操作"><MoreHorizontal className="h-3.5 w-3.5" />更多</Button>
+                      <AdminRowActionButton label="更多" icon={MoreHorizontal} className="min-w-[88px]" onClick={() => setOpenActions(current => current === String(item.id) ? undefined : String(item.id))} />
                       {openActions === String(item.id) && <>
                         <button className="fixed inset-0 z-20 cursor-default" aria-label="关闭更多操作菜单" onClick={() => setOpenActions(undefined)} />
                         <div className="absolute right-0 top-11 z-30 w-40 overflow-hidden rounded-2xl border border-border bg-surface p-1.5 text-sm shadow-2xl">
@@ -70,7 +67,7 @@ export function AdminInterviewList({ items, reports, candidates, loading, onNoti
                         </div>
                       </>}
                     </div>
-                  </div>
+                  </AdminRowActions>
                 </td>
               </tr>
             }) : <tr><td data-mobile-full colSpan={6} className="px-5 py-12 text-center text-muted-foreground">暂无符合条件的面试</td></tr>}

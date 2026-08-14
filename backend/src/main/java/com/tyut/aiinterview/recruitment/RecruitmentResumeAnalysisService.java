@@ -3,6 +3,7 @@ package com.tyut.aiinterview.recruitment;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.tyut.aiinterview.ai.AiGenerationContext;
 import com.tyut.aiinterview.ai.DeepSeekGateway;
 import com.tyut.aiinterview.common.BusinessException;
@@ -87,6 +88,26 @@ public class RecruitmentResumeAnalysisService {
             eventPublisher.publishEvent(new ResumeParseCompletedEvent(resumeId, analysis.getAnalysisVersion(), false, safeError(exception)));
             throw exception;
         }
+    }
+
+    public void markLeaseExpired(AiTask task) {
+        JsonNode input = tree(task.getInputPayload());
+        Long resumeId = input.path("resumeId").asLong(0);
+        Long analysisId = input.path("analysisId").asLong(0);
+        String error = "简历解析任务执行超时，请重新发起解析";
+        analysisMapper.update(null, new LambdaUpdateWrapper<CandidateResumeAnalysis>()
+                .eq(CandidateResumeAnalysis::getId, analysisId)
+                .eq(CandidateResumeAnalysis::getAiTaskId, task.getId())
+                .in(CandidateResumeAnalysis::getStatus, "PENDING", PROCESSING)
+                .set(CandidateResumeAnalysis::getStatus, FAILED)
+                .set(CandidateResumeAnalysis::getErrorMessage, error)
+                .set(CandidateResumeAnalysis::getFinishedAt, LocalDateTime.now()));
+        resumeMapper.update(null, new LambdaUpdateWrapper<CandidateResume>()
+                .eq(CandidateResume::getId, resumeId)
+                .eq(CandidateResume::getParseVersion, input.path("analysisVersion").asInt(0))
+                .in(CandidateResume::getParseStatus, "PENDING", PROCESSING)
+                .set(CandidateResume::getParseStatus, FAILED)
+                .set(CandidateResume::getParseError, error));
     }
 
     private void markProcessing(CandidateResume resume, CandidateResumeAnalysis analysis) {

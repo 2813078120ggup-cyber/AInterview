@@ -11,6 +11,7 @@ import com.tyut.aiinterview.mapper.UserRoleMapper;
 import com.tyut.aiinterview.observability.OperationAuditService;
 import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
+import com.tyut.aiinterview.security.RefreshTokenService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -36,17 +37,25 @@ public class CompanyTeamService {
     private final CurrentUser currentUser;
     private final CompanyAccessService companyAccess;
     private final OperationAuditService auditService;
+    private final RefreshTokenService refreshTokenService;
 
     public CompanyTeamService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
                               PasswordEncoder passwordEncoder, CurrentUser currentUser,
                               CompanyAccessService companyAccess) {
-        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, companyAccess, null);
+        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, companyAccess, null, null);
+    }
+
+    public CompanyTeamService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
+                              PasswordEncoder passwordEncoder, CurrentUser currentUser,
+                              CompanyAccessService companyAccess, OperationAuditService auditService) {
+        this(userMapper, userRoleMapper, roleMapper, passwordEncoder, currentUser, companyAccess, auditService, null);
     }
 
     @Autowired
     public CompanyTeamService(UserMapper userMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper,
                               PasswordEncoder passwordEncoder, CurrentUser currentUser,
-                              CompanyAccessService companyAccess, OperationAuditService auditService) {
+                              CompanyAccessService companyAccess, OperationAuditService auditService,
+                              RefreshTokenService refreshTokenService) {
         this.userMapper = userMapper;
         this.userRoleMapper = userRoleMapper;
         this.roleMapper = roleMapper;
@@ -54,6 +63,7 @@ public class CompanyTeamService {
         this.currentUser = currentUser;
         this.companyAccess = companyAccess;
         this.auditService = auditService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     public List<CompanyTeamDtos.TeamMemberView> list() {
@@ -91,9 +101,22 @@ public class CompanyTeamService {
         Long companyId = companyAccess.requirePermission("company:team:manage");
         UserAccount user = requireMember(companyId, userId);
         RoleSelection selection = resolveRoles(request.roleCodes());
-        ensureAdminRemains(companyId, user, selection.roleIds(), null);
-        replaceRoles(user.getId(), selection.roles());
-        audit("TEAM_MEMBER_ROLES_UPDATED", user.getId(), companyId, "更新企业成员角色，共 " + selection.roles().size() + " 个");
+        Set<Long> currentRoleIds = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                        .eq(UserRole::getUserId, user.getId()))
+                .stream().map(UserRole::getRoleId).collect(Collectors.toSet());
+        boolean changed = !currentRoleIds.equals(selection.roleIds());
+        if (changed) {
+            ensureAdminRemains(companyId, user, selection.roleIds(), null);
+            replaceRoles(user.getId(), selection.roles());
+            user.incrementSecurityVersion();
+            userMapper.updateById(user);
+            if (refreshTokenService != null) {
+                refreshTokenService.revokeAllSessions(user.getId(), "ROLES_CHANGED");
+            }
+        }
+        audit("TEAM_MEMBER_ROLES_UPDATED", user.getId(), companyId,
+                changed ? "更新企业成员角色并使原登录会话失效，共 " + selection.roles().size() + " 个"
+                        : "保存企业成员角色（角色未变化）");
         return toView(user);
     }
 

@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.recruitment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -390,7 +391,8 @@ public class RecruitmentService {
         applyApplicationFilters(wrapper, query, companyId);
         applyApplicationSorting(wrapper, query.sort());
         Page<JobApplication> result = applicationMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
-        return PageResult.of(result.getRecords().stream().map(item -> toApplicationView(item, false)).toList(),
+        ApplicationRelations relations = loadApplicationRelations(result.getRecords());
+        return PageResult.of(result.getRecords().stream().map(item -> toApplicationView(item, false, relations)).toList(),
                 result.getTotal(), pageNo, pageSize);
     }
 
@@ -609,7 +611,8 @@ public class RecruitmentService {
         String status = normalizeEnum(requestedStatus);
         switch (status) {
             case "NONE" -> wrapper.isNull(JobApplication::getInterviewId)
-                    .notExists("SELECT 1 FROM offline_interview oi WHERE oi.application_id = id AND oi.company_id = " + companyId);
+                    .apply("NOT EXISTS (SELECT 1 FROM offline_interview oi "
+                            + "WHERE oi.application_id = job_application.id AND oi.company_id = {0})", companyId);
             case "AI_PENDING" -> wrapper.eq(JobApplication::getStatus, ApplicationStatus.AI_INTERVIEW_PENDING.name());
             case "AI_IN_PROGRESS" -> wrapper.and(item -> item.eq(JobApplication::getStatus, ApplicationStatus.AI_INTERVIEWING.name())
                     .or().apply("EXISTS (SELECT 1 FROM interview i WHERE i.id = interview_id AND i.status = {0})", Interview.IN_PROGRESS));
@@ -641,13 +644,25 @@ public class RecruitmentService {
     }
 
     private RecruitmentDtos.ApplicationView toApplicationView(JobApplication application, boolean includeHistory) {
-        Company company = companyAccess.requireActiveCompany(application.getCompanyId());
-        JobPosition position = positionMapper.selectById(application.getPositionId());
-        UserAccount candidate = userMapper.selectById(application.getCandidateId());
-        CandidateResume resume = application.getResumeId() == null ? null : resumeMapper.selectById(application.getResumeId());
-        Interview aiInterview = application.getInterviewId() == null ? null : interviewMapper.selectById(application.getInterviewId());
-        OfflineInterview offline = offlineInterviewMapper.selectOne(new LambdaQueryWrapper<OfflineInterview>()
-                .eq(OfflineInterview::getApplicationId, application.getId()).last("LIMIT 1"));
+        return toApplicationView(application, includeHistory, null);
+    }
+
+    private RecruitmentDtos.ApplicationView toApplicationView(JobApplication application, boolean includeHistory,
+                                                               ApplicationRelations relations) {
+        Company company = relations == null ? companyAccess.requireActiveCompany(application.getCompanyId())
+                : relations.companies().get(application.getCompanyId());
+        JobPosition position = relations == null ? positionMapper.selectById(application.getPositionId())
+                : relations.positions().get(application.getPositionId());
+        UserAccount candidate = relations == null ? userMapper.selectById(application.getCandidateId())
+                : relations.candidates().get(application.getCandidateId());
+        CandidateResume resume = application.getResumeId() == null ? null : relations == null
+                ? resumeMapper.selectById(application.getResumeId()) : relations.resumes().get(application.getResumeId());
+        Interview aiInterview = application.getInterviewId() == null ? null : relations == null
+                ? interviewMapper.selectById(application.getInterviewId()) : relations.interviews().get(application.getInterviewId());
+        OfflineInterview offline = relations == null
+                ? offlineInterviewMapper.selectOne(new LambdaQueryWrapper<OfflineInterview>()
+                        .eq(OfflineInterview::getApplicationId, application.getId()).last("LIMIT 1"))
+                : relations.offlineInterviews().get(application.getId());
         List<RecruitmentDtos.HistoryView> history = includeHistory
                 ? historyMapper.selectList(new LambdaQueryWrapper<JobApplicationStatusHistory>()
                         .eq(JobApplicationStatusHistory::getApplicationId, application.getId())
@@ -669,6 +684,47 @@ public class RecruitmentService {
                  application.getReviewNote(), application.getInterviewId(), toInterviewSummary(aiInterview), toOfflineInterviewView(offline), history,
                  application.getSubmittedAt(), application.getUpdatedAt(), allowedTransitions,
                  interviewStatus(aiInterview, offline), application.getUpdatedAt(), nextStep(allowedTransitions));
+    }
+
+    private ApplicationRelations loadApplicationRelations(List<JobApplication> applications) {
+        if (applications.isEmpty()) return ApplicationRelations.empty();
+        Set<Long> companyIds = applications.stream().map(JobApplication::getCompanyId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> positionIds = applications.stream().map(JobApplication::getPositionId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> candidateIds = applications.stream().map(JobApplication::getCandidateId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> resumeIds = applications.stream().map(JobApplication::getResumeId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> interviewIds = applications.stream().map(JobApplication::getInterviewId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> applicationIds = applications.stream().map(JobApplication::getId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, Company> companies = companyIds.stream().collect(Collectors.toMap(id -> id,
+                companyAccess::requireActiveCompany));
+        Map<Long, JobPosition> positions = positionIds.isEmpty() ? Map.of() : positionMapper.selectBatchIds(positionIds).stream()
+                .collect(Collectors.toMap(JobPosition::getId, item -> item));
+        Map<Long, UserAccount> candidates = candidateIds.isEmpty() ? Map.of() : userMapper.selectBatchIds(candidateIds).stream()
+                .collect(Collectors.toMap(UserAccount::getId, item -> item));
+        Map<Long, CandidateResume> resumes = resumeIds.isEmpty() ? Map.of() : resumeMapper.selectBatchIds(resumeIds).stream()
+                .collect(Collectors.toMap(CandidateResume::getId, item -> item));
+        Map<Long, Interview> interviews = interviewIds.isEmpty() ? Map.of() : interviewMapper.selectBatchIds(interviewIds).stream()
+                .collect(Collectors.toMap(Interview::getId, item -> item));
+        Map<Long, OfflineInterview> offlineInterviews = applicationIds.isEmpty() ? Map.of()
+                : offlineInterviewMapper.selectList(new QueryWrapper<OfflineInterview>()
+                        .in("application_id", applicationIds)).stream()
+                        .collect(Collectors.toMap(OfflineInterview::getApplicationId, item -> item, (left, right) -> left));
+        return new ApplicationRelations(companies, positions, candidates, resumes, interviews, offlineInterviews);
+    }
+
+    private record ApplicationRelations(Map<Long, Company> companies, Map<Long, JobPosition> positions,
+                                        Map<Long, UserAccount> candidates, Map<Long, CandidateResume> resumes,
+                                        Map<Long, Interview> interviews,
+                                        Map<Long, OfflineInterview> offlineInterviews) {
+        private static ApplicationRelations empty() {
+            return new ApplicationRelations(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+        }
     }
 
     private static String interviewStatus(Interview aiInterview, OfflineInterview offlineInterview) {

@@ -6,6 +6,8 @@ import { NotificationCenter } from '@/components/notification-center'
 import { PageTransition } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
 import { request, requestBlob } from '@/lib/api'
+import { cacheAvatarBlob, readCachedAvatar, removeCachedAvatar } from '@/lib/avatar-cache'
+import { workspaceHomes } from '@/lib/navigation'
 import { clearSession, profile, PROFILE_UPDATED_EVENT, updateLocalProfile, type Profile } from '@/lib/session'
 import { useTheme } from '@/lib/theme'
 import {
@@ -20,9 +22,9 @@ import {
 import { cn } from '@/lib/utils'
 
 const audienceLabels: Record<WorkspaceAudience, { brand: string; role: string; home: string }> = {
-  candidate: { brand: '候选人工作台', role: '候选人端', home: '/workspace' },
-  company: { brand: '企业招聘工作台', role: '企业端', home: '/company' },
-  admin: { brand: '平台运营工作台', role: '超级管理员端', home: '/admin/workspace' },
+  candidate: { brand: '候选人工作台', role: '候选人端', home: workspaceHomes.candidate },
+  company: { brand: '企业招聘工作台', role: '企业端', home: workspaceHomes.company },
+  admin: { brand: '平台运营工作台', role: '超级管理员端', home: workspaceHomes.admin },
 }
 
 function WorkspaceBrand({ audience, onNavigate, compact = false }: { audience: WorkspaceAudience; onNavigate?: () => void; compact?: boolean }) {
@@ -59,29 +61,41 @@ function WorkspaceDomainNavigation({ audience, currentDomain, onNavigate, mobile
 
 export function WorkspaceUserMenu({ audience, current, profileTo, onLogout }: { audience: WorkspaceAudience; current: Profile | null; profileTo?: string; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readCachedAvatar(current?.id))
+  const avatarOwnerRef = useRef(current?.id)
   const rootRef = useRef<HTMLDivElement>(null)
   const initials = current?.realName?.trim().slice(0, 1) || (audience === 'company' ? '企' : audience === 'admin' ? '管' : '我')
 
   useEffect(() => {
     let active = true
     let objectUrl: string | null = null
-    setAvatarUrl(null)
-    if (!current?.avatarAvailable) return () => { active = false }
+    const cachedAvatar = readCachedAvatar(current?.id)
+    const userChanged = avatarOwnerRef.current !== current?.id
+    avatarOwnerRef.current = current?.id
+    if (cachedAvatar) setAvatarUrl(cachedAvatar)
+    else if (userChanged) setAvatarUrl(null)
+    if (!current?.avatarAvailable) {
+      if (current?.avatarAvailable === false) {
+        removeCachedAvatar(current.id)
+        setAvatarUrl(null)
+      }
+      return () => { active = false }
+    }
 
     void requestBlob('/v1/account/avatar/content').then(blob => {
       if (!active) return
       objectUrl = URL.createObjectURL(blob)
       setAvatarUrl(objectUrl)
+      void cacheAvatarBlob(current.id, blob)
     }).catch(() => {
-      // The initials remain the safe fallback when the protected media request fails.
+      // Keep the cached avatar when the protected media request is temporarily unavailable.
     })
 
     return () => {
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [current?.id, current?.avatarAvailable])
+  }, [current?.id, current?.avatarAvailable, current?.avatarRevision])
 
   useEffect(() => {
     if (!open) return
@@ -161,7 +175,7 @@ export function WorkspaceGlobalNav({ audience, currentDomain, onOpenNavigation, 
         <Button type="button" variant="ghost" className="h-10 w-10 rounded-full px-0" onClick={toggleTheme} aria-label={dark ? '切换为浅色模式' : '切换为深色模式'}>
           {dark ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
         </Button>
-        <NotificationCenter role={audience === 'candidate' ? 'candidate' : 'admin'} />
+        <NotificationCenter audience={audience} />
         <WorkspaceUserMenu audience={audience} current={current} profileTo={profileTo} onLogout={onLogout} />
       </div>
     </div>

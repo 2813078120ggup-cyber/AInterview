@@ -1,5 +1,5 @@
 import { Activity, AlertCircle, CheckCircle2, Clock3, RefreshCw, Search, Timer, Zap } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -82,7 +82,9 @@ export function AdminAiGenerations() {
     return params.toString()
   }, [generationType, keyword, pageNo, promptCode, status])
 
-  useEffect(() => { void load() }, [query])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect() }, [query])
 
   async function load() {
     setLoading(true)

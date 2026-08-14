@@ -14,7 +14,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/badge'
@@ -223,7 +223,7 @@ export function CandidateReflections() {
     return () => { cancelled = true }
   }, [loadVersion])
 
-  const reflections = summary?.reflections ?? []
+  const reflections = useMemo(() => summary?.reflections ?? [], [summary?.reflections])
   const eligibleInterviews = useMemo(
     () => interviews
       .filter(item => canWriteReflection(item.status))
@@ -258,30 +258,34 @@ export function CandidateReflections() {
     setSearchParams({}, { replace: true })
   }
 
+  const openEditorEffect = useEffectEvent(openEditor)
+  const closeEditorEffect = useEffectEvent(closeEditor)
+  const requestedInterviewId = searchParams.get('interviewId')
+
   useEffect(() => {
-    const interviewId = searchParams.get('interviewId')
+    const interviewId = requestedInterviewId
     if (!interviewId) {
       handledInterviewParam.current = null
       return
     }
     if (loading || handledInterviewParam.current === interviewId) return
     handledInterviewParam.current = interviewId
-    if (eligibleInterviews.some(item => String(item.id) === interviewId)) openEditor(interviewId)
-  }, [loading, searchParams, eligibleInterviews])
+    if (eligibleInterviews.some(item => String(item.id) === interviewId)) openEditorEffect(interviewId)
+  }, [loading, requestedInterviewId, eligibleInterviews])
 
   useEffect(() => {
     if (!editorOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeEditor()
+      if (event.key === 'Escape') closeEditorEffect()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [editorOpen, saving])
+  }, [editorOpen])
 
   function chooseInterview(interviewId: string) {
     setForm(toForm(reflectionByInterview.get(interviewId), interviewId))

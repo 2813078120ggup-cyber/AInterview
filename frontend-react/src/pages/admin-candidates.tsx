@@ -1,6 +1,6 @@
-import { Eye, Loader2, Power, PowerOff, Search, UserPlus, UserRound, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Search, UserPlus, UserRound, X } from 'lucide-react'
+import { useEffect, useEffectEvent, useState } from 'react'
+import { AdminAccountRowActions } from '@/components/admin/admin-row-actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -15,7 +15,6 @@ const usernamePattern = /^[A-Za-z][A-Za-z0-9_]{3,31}$/
 const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d)[!-~]{8,64}$/
 
 export function AdminCandidates() {
-  const nav = useNavigate()
   const [items, setItems] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [keyword, setKeyword] = useState('')
@@ -44,7 +43,9 @@ export function AdminCandidates() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect() }, [])
 
   async function toggle(user: User) {
     setUpdatingId(user.id)
@@ -105,7 +106,7 @@ export function AdminCandidates() {
           <td data-label="邮箱" className="break-all px-5 py-5 text-muted-foreground">{user.email || '未填写'}</td>
           <td data-label="最近登录" className="px-5 py-5 text-muted-foreground">{user.lastLoginAt?.replace('T', ' ').slice(0, 16) || '从未登录'}</td>
           <td data-label="状态" className="px-5 py-5"><Badge tone={user.status === 1 ? 'success' : 'default'}>{user.status === 1 ? '已启用' : '已停用'}</Badge></td>
-          <td data-label="操作" className="px-5 py-5 text-right"><div className="flex justify-end gap-2"><Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs" onClick={() => nav(`/admin/candidates/${user.id}`)}><Eye className="h-3.5 w-3.5" />查看</Button><Button type="button" variant="secondary" className="h-9 gap-1 whitespace-nowrap px-3 text-xs shadow-[0_6px_18px_rgba(20,18,17,.04)]" disabled={updatingId === user.id} aria-busy={updatingId === user.id} onClick={() => void toggle(user)}>{updatingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : user.status === 1 ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}{updatingId === user.id ? '处理中…' : user.status === 1 ? '停用' : '启用'}</Button></div></td>
+          <td data-label="操作" className="px-5 py-5 text-right"><AdminAccountRowActions detailTo={`/admin/candidates/${user.id}`} subjectLabel={`候选人“${user.realName || user.username}”`} active={user.status === 1} busy={updatingId === user.id} onToggleStatus={() => void toggle(user)} /></td>
         </tr>)}{!items.length && <tr><td data-mobile-full colSpan={6} className="p-12 text-center text-muted-foreground">暂无候选人记录</td></tr>}</tbody>
       </table>}
     </Card>

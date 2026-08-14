@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.domain;
 
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -26,6 +27,16 @@ public class AiProviderConfig {
     private Integer textDefault;
     private Integer voiceDefault;
     private String remark;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String lastTestState;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Integer lastTestStatusCode;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long lastTestLatencyMs;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String lastTestMessage;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime lastTestedAt;
     private Long createdBy;
     private Long updatedBy;
     private LocalDateTime createdAt;

@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, Inbox, Send, X } from 'lucide-react'
+import { Bell, CheckCheck, ChevronRight, Inbox, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -6,10 +6,11 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { notificationEvent } from '@/lib/notifications'
 import { request } from '@/lib/api'
+import type { WorkspaceAudience } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 type NotificationCenterProps = {
-  role: 'admin' | 'candidate'
+  audience: WorkspaceAudience
 }
 
 type SiteNotification = {
@@ -19,6 +20,7 @@ type SiteNotification = {
   content: string
   businessType?: string
   businessId?: string
+  actionPath?: string
   read: boolean
   createdAt: string
 }
@@ -35,7 +37,31 @@ function shortDate(value?: string) {
   return value.replace('T', ' ').slice(0, 16)
 }
 
-export function NotificationCenter({ role }: NotificationCenterProps) {
+const audienceCopy: Record<WorkspaceAudience, { eyebrow: string; description: string; empty: string }> = {
+  candidate: { eyebrow: '消息通知', description: '查看申请进度、面试安排与报告提醒。', empty: '新的招聘与面试通知将在此显示。' },
+  company: { eyebrow: '招聘通知', description: '查看候选人申请与招聘流程动态。', empty: '新的候选人和招聘通知将在此显示。' },
+  admin: { eyebrow: '运营通知', description: '查看平台业务与服务工单动态。', empty: '新的平台运营通知将在此显示。' },
+}
+
+const businessTypeLabels: Record<string, string> = {
+  FEEDBACK_TICKET: '服务工单',
+  INTERVIEW: '面试通知',
+  JOB_APPLICATION: '招聘申请',
+  REPORT: '面试报告',
+  USER: '账户安全',
+}
+
+function safeActionPath(value?: string) {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null
+  try {
+    const parsed = new URL(value, 'https://ainterview.local')
+    return parsed.origin === 'https://ainterview.local' ? `${parsed.pathname}${parsed.search}${parsed.hash}` : null
+  } catch {
+    return null
+  }
+}
+
+export function NotificationCenter({ audience }: NotificationCenterProps) {
   const navigate = useNavigate()
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
@@ -99,17 +125,15 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
 
   const unreadCount = visibleItems.filter(item => !item.read).length
 
-  async function markRead(item: SiteNotification) {
+  function openNotification(item: SiteNotification) {
     if (!item.read) {
-      await request(`/v1/notifications/${item.id}/read`, { method: 'PUT' })
       setItems(previous => previous.map(current => current.id === item.id ? { ...current, read: true } : current))
+      void request(`/v1/notifications/${item.id}/read`, { method: 'PUT' }).catch(() => refresh())
     }
-    if (!item.businessId) return
-    if (item.businessType === 'FEEDBACK_TICKET') {
-      navigate(role === 'admin' ? `/admin/tickets/${item.businessId}` : `/candidate/tickets/${item.businessId}`)
-    } else if (item.businessType === 'INTERVIEW') {
-      navigate(role === 'admin' ? `/admin/interviews/${item.businessId}` : `/candidate/interviews/${item.businessId}/room`)
-    }
+    const destination = safeActionPath(item.actionPath)
+    if (!destination) return
+    setOpen(false)
+    navigate(destination)
   }
 
   async function markAllRead() {
@@ -155,14 +179,14 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
             <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:p-5">
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
-                  {role === 'admin' ? '已发送通知' : '消息通知'}
+                  {audienceCopy[audience].eyebrow}
                 </p>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
                   <h3 id="notification-center-title" className="truncate text-xl font-black text-foreground">通知中心</h3>
                   {unreadCount > 0 && <span className="shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--accent)]">{unreadCount} 条未读</span>}
                 </div>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  {role === 'admin' ? '查看近期发送的面试通知。' : '查看面试安排与练习提醒。'}
+                  {audienceCopy[audience].description}
                 </p>
               </div>
               <Button
@@ -198,7 +222,7 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
                   </span>
                   <p className="mt-4 text-base font-black text-foreground">暂无通知</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {role === 'admin' ? '可在面试管理中向候选人发送通知。' : '新的面试通知将在此显示。'}
+                    {audienceCopy[audience].empty}
                   </p>
                 </div>
               ) : (
@@ -214,7 +238,7 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
                           'w-full min-w-0 rounded-[22px] border p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(42,31,20,0.12)] dark:hover:shadow-[0_18px_42px_rgba(0,0,0,0.36)]',
                           unread ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)]/80 dark:bg-[var(--accent)]/10' : 'border-border bg-background/70 hover:bg-muted/60',
                         )}
-                        onClick={() => markRead(item)}
+                        onClick={() => openNotification(item)}
                       >
                         <div className="flex min-w-0 items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
@@ -225,11 +249,11 @@ export function NotificationCenter({ role }: NotificationCenterProps) {
                             <p className="mt-1 line-clamp-4 break-words text-sm leading-6 text-muted-foreground sm:line-clamp-3">{item.content}</p>
                           </div>
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-[var(--accent)]">
-                            <Send className="h-4 w-4" />
+                            {item.actionPath ? <ChevronRight className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                           </span>
                         </div>
                         <div className="mt-3 grid gap-1.5 border-t border-border/70 pt-3 text-xs text-muted-foreground">
-                          {item.businessType && <span className="break-words">来源：{item.businessType === 'FEEDBACK_TICKET' ? '反馈工单' : item.businessType === 'INTERVIEW' ? '面试通知' : item.businessType}</span>}
+                          {item.businessType && <span className="break-words">来源：{businessTypeLabels[item.businessType] ?? item.businessType}</span>}
                           <time dateTime={item.createdAt}>{shortDate(item.createdAt)}</time>
                         </div>
                       </button>

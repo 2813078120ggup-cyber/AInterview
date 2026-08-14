@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.ai;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,9 +39,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +86,13 @@ public class AiTaskService {
     private final Executor reportScoringExecutor;
     private final RecruitmentResumeAnalysisService recruitmentResumeAnalysisService;
     private final int taskFetchLimit;
+    private final long taskLeaseSeconds;
+    private final String workerId = java.net.InetAddress.getLoopbackAddress().getHostName() + ":" + UUID.randomUUID();
+    private final ScheduledExecutorService leaseHeartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "ai-task-lease-heartbeat");
+        thread.setDaemon(true);
+        return thread;
+    });
     private RecruitmentJobMatchService recruitmentJobMatchService;
     private CompanyAccessService companyAccessService;
     private OperationAuditService operationAuditService;
@@ -95,7 +108,8 @@ public class AiTaskService {
                          RecruitmentResumeAnalysisService recruitmentResumeAnalysisService,
                          @Qualifier("aiTaskWorkerExecutor") Executor aiTaskWorkerExecutor,
                          @Qualifier("reportScoringExecutor") Executor reportScoringExecutor,
-                         @Value("${app.ai-task.fetch-limit:12}") int taskFetchLimit) {
+                         @Value("${app.ai-task.fetch-limit:12}") int taskFetchLimit,
+                         @Value("${app.ai-task.lease-seconds:300}") long taskLeaseSeconds) {
         this.taskMapper = taskMapper;
         this.interviewMapper = interviewMapper;
         this.interviewQuestionMapper = interviewQuestionMapper;
@@ -116,6 +130,7 @@ public class AiTaskService {
         this.aiTaskWorkerExecutor = aiTaskWorkerExecutor;
         this.reportScoringExecutor = reportScoringExecutor;
         this.taskFetchLimit = Math.max(1, Math.min(50, taskFetchLimit));
+        this.taskLeaseSeconds = Math.max(60, taskLeaseSeconds);
     }
 
     @Transactional
@@ -324,6 +339,7 @@ public class AiTaskService {
     @Scheduled(fixedDelayString = "${app.ai-task.poll-interval-ms:1000}")
     public void processPendingTasks() {
         if (!schedulerEnabled) return;
+        recoverExpiredTasks();
         List<AiTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<AiTask>().eq(AiTask::getStatus, "PENDING")
                 .le(AiTask::getScheduledAt, LocalDateTime.now())
                 .last("ORDER BY CASE WHEN task_type = 'AUTO_EVALUATION' THEN 0 "
@@ -337,6 +353,7 @@ public class AiTaskService {
     }
 
     public void process(Long id) {
+        recoverExpiredTask(id);
         AiTask claimed = claim(id);
         if (claimed != null) executeClaimed(claimed);
     }
@@ -349,15 +366,22 @@ public class AiTaskService {
     private AiTask claim(Long id) {
         AiTask task = taskMapper.selectById(id);
         if (task == null || !"PENDING".equals(task.getStatus())) return null;
+        LocalDateTime now = LocalDateTime.now();
+        String claimToken = UUID.randomUUID().toString();
+        if (taskMapper.claimPending(id, claimToken, workerId, now, now.plusSeconds(taskLeaseSeconds)) == 0) return null;
         task.setStatus("RUNNING");
         task.setAttempts(task.getAttempts() + 1);
-        task.setStartedAt(LocalDateTime.now());
-        if (taskMapper.update(task, new LambdaQueryWrapper<AiTask>()
-                .eq(AiTask::getId, id).eq(AiTask::getStatus, "PENDING")) == 0) return null;
+        task.setStartedAt(now);
+        task.setClaimToken(claimToken);
+        task.setLockedBy(workerId);
+        task.setHeartbeatAt(now);
+        task.setLeaseExpiresAt(now.plusSeconds(taskLeaseSeconds));
         return task;
     }
 
     private void executeClaimed(AiTask task) {
+        ScheduledFuture<?> heartbeat = leaseHeartbeatExecutor.scheduleAtFixedRate(
+                () -> extendLease(task), taskLeaseSeconds / 3, taskLeaseSeconds / 3, TimeUnit.SECONDS);
         try {
             String output = switch (task.getTaskType()) {
                 case FOLLOW_UP -> followUp(task);
@@ -374,7 +398,7 @@ public class AiTaskService {
             task.setOutputPayload(output);
             task.setFinishedAt(LocalDateTime.now());
             task.setErrorMessage(null);
-            taskMapper.updateById(task);
+            if (!finishClaimedTask(task)) return;
             if (AUTO_EVALUATION.equals(task.getTaskType())) {
                 markInterviewReportReady(task.getInterviewId());
                 if (operationAuditService != null) operationAuditService.success("REPORT", "REPORT_GENERATED",
@@ -388,8 +412,12 @@ public class AiTaskService {
             task.setStatus(task.getAttempts() < task.getMaxAttempts() && retryable(exception) ? "PENDING" : "FAILED");
             task.setScheduledAt(LocalDateTime.now().plusSeconds(30));
             task.setErrorMessage(truncate(exception.getMessage()));
-            if ("FAILED".equals(task.getStatus())) {
+            boolean failed = "FAILED".equals(task.getStatus());
+            if (failed) {
                 task.setFinishedAt(LocalDateTime.now());
+            }
+            if (!finishClaimedTask(task)) return;
+            if (failed) {
                 if (AUTO_EVALUATION.equals(task.getTaskType())) {
                     markInterviewEvaluationFailed(task.getInterviewId());
                     if (operationAuditService != null) operationAuditService.failure("REPORT", "REPORT_GENERATION_FAILED",
@@ -399,7 +427,8 @@ public class AiTaskService {
                     markFreeInterviewFailed(task);
                 }
             }
-            taskMapper.updateById(task);
+        } finally {
+            heartbeat.cancel(false);
         }
     }
 
@@ -705,12 +734,66 @@ public class AiTaskService {
                     "nextQuestion", fallback, "fallback", true));
             task.setErrorMessage("模型追问不可用，已使用稳定追问：" + truncate(exception.getMessage()));
             task.setFinishedAt(LocalDateTime.now());
-            taskMapper.updateById(task);
+            finishClaimedTask(task);
         } catch (RuntimeException fallbackException) {
             task.setStatus("FAILED");
             task.setErrorMessage(truncate(fallbackException.getMessage()));
             task.setFinishedAt(LocalDateTime.now());
-            taskMapper.updateById(task);
+            finishClaimedTask(task);
+        }
+    }
+
+    private void extendLease(AiTask task) {
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            taskMapper.extendLease(task.getId(), task.getClaimToken(), now, now.plusSeconds(taskLeaseSeconds));
+        } catch (RuntimeException ignored) {
+            // The current lease still protects the task when one heartbeat attempt fails transiently.
+        }
+    }
+
+    private boolean finishClaimedTask(AiTask task) {
+        String claimToken = task.getClaimToken();
+        task.setClaimToken(null);
+        task.setLockedBy(null);
+        task.setLeaseExpiresAt(null);
+        task.setHeartbeatAt(null);
+        UpdateWrapper<AiTask> wrapper = new UpdateWrapper<AiTask>()
+                .eq("id", task.getId()).eq("claim_token", claimToken)
+                .set("claim_token", null).set("locked_by", null)
+                .set("lease_expires_at", null).set("heartbeat_at", null);
+        return taskMapper.update(task, wrapper) == 1;
+    }
+
+    private void recoverExpiredTasks() {
+        LocalDateTime now = LocalDateTime.now();
+        taskMapper.requeueExpired(now);
+        List<Long> expiredExhausted = taskMapper.selectExpiredExhausted(now, taskFetchLimit);
+        if (expiredExhausted == null) return;
+        for (Long id : expiredExhausted) {
+            AiTask expired = taskMapper.selectById(id);
+            if (taskMapper.failExpiredExhausted(id, now) == 0 || expired == null) continue;
+            markExpiredBusinessState(expired);
+        }
+    }
+
+    private void recoverExpiredTask(Long id) {
+        AiTask task = taskMapper.selectById(id);
+        if (task == null || !"RUNNING".equals(task.getStatus()) || task.getLeaseExpiresAt() == null
+                || !task.getLeaseExpiresAt().isBefore(LocalDateTime.now())) return;
+        LocalDateTime now = LocalDateTime.now();
+        if (task.getAttempts() < task.getMaxAttempts()) taskMapper.requeueExpired(now);
+        else if (taskMapper.failExpiredExhausted(id, now) == 1) markExpiredBusinessState(task);
+    }
+
+    private void markExpiredBusinessState(AiTask expired) {
+        if (AUTO_EVALUATION.equals(expired.getTaskType())) markInterviewEvaluationFailed(expired.getInterviewId());
+        if (FREE_INTERVIEW_ANALYSIS.equals(expired.getTaskType()) || FREE_INTERVIEW_REPORT.equals(expired.getTaskType())) {
+            markFreeInterviewFailed(expired);
+        }
+        if (RESUME_PARSE.equals(expired.getTaskType())) recruitmentResumeAnalysisService.markLeaseExpired(expired);
+        if (JOB_MATCH.equals(expired.getTaskType()) && recruitmentJobMatchService != null) {
+            recruitmentJobMatchService.markLeaseExpired(expired);
         }
     }
 
@@ -765,6 +848,10 @@ public class AiTaskService {
         task.setAttempts(0);
         task.setScheduledAt(LocalDateTime.now());
         task.setStartedAt(null);
+        task.setClaimToken(null);
+        task.setLockedBy(null);
+        task.setLeaseExpiresAt(null);
+        task.setHeartbeatAt(null);
         task.setFinishedAt(null);
         task.setInputPayload(payload);
         task.setOutputPayload(null);

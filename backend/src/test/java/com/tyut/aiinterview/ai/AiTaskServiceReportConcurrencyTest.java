@@ -81,6 +81,7 @@ class AiTaskServiceReportConcurrencyTest {
         List<InterviewAnswer> answers = List.of(answer(31L, 21L), answer(32L, 22L), answer(33L, 23L));
 
         when(taskMapper.selectById(51L)).thenReturn(task);
+        when(taskMapper.claimPending(any(), anyString(), anyString(), any(), any())).thenReturn(1);
         when(taskMapper.update(any(AiTask.class), any())).thenReturn(1);
         when(taskMapper.updateById(any(AiTask.class))).thenReturn(1);
         when(interviewMapper.selectById(11L)).thenReturn(interview);
@@ -129,7 +130,7 @@ class AiTaskServiceReportConcurrencyTest {
                 questionMapper, evaluationMapper, reportMapper, mock(FreeInterviewSessionMapper.class),
                 mock(FreeInterviewTurnMapper.class), gateway, prompts, mock(ChoiceAnswerScorer.class),
                 objectMapper, currentUser, mock(com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService.class),
-                Runnable::run, scoringExecutor, 12);
+                Runnable::run, scoringExecutor, 12, 300);
 
         CompletableFuture<Void> processing = CompletableFuture.runAsync(() -> service.process(51L));
         assertTrue(allScoringCallsStarted.await(2, TimeUnit.SECONDS), "三道主观题应并行进入评分调用");

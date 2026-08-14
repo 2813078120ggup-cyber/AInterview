@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ApiError, request, requestBlob, upload } from '@/lib/api'
+import { cacheAvatarBlob, readCachedAvatar, removeCachedAvatar } from '@/lib/avatar-cache'
 import { formatDateTime } from '@/lib/recruitment'
-import { profile, rotateSessionTokens, updateLocalProfile } from '@/lib/session'
+import { profile, rotateSessionTokens, updateLocalAvatar, updateLocalProfile } from '@/lib/session'
 
 type AccountProfile = {
   id: string
@@ -71,7 +72,7 @@ export function CandidateProfile() {
   const [loadingError, setLoadingError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readCachedAvatar(localProfile?.id))
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarLoading, setAvatarLoading] = useState(false)
@@ -124,6 +125,7 @@ export function CandidateProfile() {
     const requestId = ++avatarRequestIdRef.current
     setAvatarError('')
     if (!available) {
+      removeCachedAvatar(localProfile?.id)
       setAvatarUrl(previous => {
         releaseObjectUrl(previous)
         return null
@@ -144,12 +146,13 @@ export function CandidateProfile() {
         releaseObjectUrl(previous)
         return nextUrl
       })
+      if (localProfile?.id) void cacheAvatarBlob(localProfile.id, blob)
     } catch (reason) {
       if (requestId === avatarRequestIdRef.current) setAvatarError(errorMessage(reason, '头像暂时无法加载，账户资料仍可用。'))
     } finally {
       if (requestId === avatarRequestIdRef.current) setAvatarLoading(false)
     }
-  }, [releaseObjectUrl])
+  }, [localProfile?.id, releaseObjectUrl])
 
   const load = useCallback(async () => {
     setPageState('loading')
@@ -249,7 +252,7 @@ export function CandidateProfile() {
       formData.append('file', avatarFile)
       const next = await upload<AccountProfile>('/v1/account/avatar', formData)
       setAccount(next)
-      updateLocalProfile({ avatarAvailable: next.avatarAvailable })
+      updateLocalAvatar(next.avatarAvailable)
       setAvatarFile(null)
       setAvatarPreviewUrl(previous => {
         releaseObjectUrl(previous)
@@ -273,7 +276,7 @@ export function CandidateProfile() {
     try {
       const next = await request<AccountProfile>('/v1/account/avatar', { method: 'DELETE' })
       setAccount(next)
-      updateLocalProfile({ avatarAvailable: next.avatarAvailable })
+      updateLocalAvatar(next.avatarAvailable)
       setAvatarFile(null)
       setAvatarPreviewUrl(previous => {
         releaseObjectUrl(previous)

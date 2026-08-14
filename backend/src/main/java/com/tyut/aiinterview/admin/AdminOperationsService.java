@@ -6,6 +6,7 @@ import com.tyut.aiinterview.mapper.AiProviderConfigMapper;
 import com.tyut.aiinterview.domain.AiProviderConfig;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AdminOperationsService {
+    private static final DateTimeFormatter STATUS_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final AdminAiOperationsMapper aiMapper;
     private final AiProviderConfigMapper providerMapper;
     private final DataSource dataSource;
@@ -35,6 +37,7 @@ public class AdminOperationsService {
 
     public AdminOperationsDtos.Summary summary() {
         List<AdminOperationsDtos.Component> components = new ArrayList<>();
+        List<AiProviderConfig> providers = providerMapper.selectList(null);
         components.add(component("backend", "backend", "UP", "正常",
                 "当前管理接口已响应。", "暂不需要处理。"));
         components.add(discoveryComponent("cloud-gateway", "cloud-gateway", "网关实例已注册，等待路由验证。"));
@@ -42,8 +45,8 @@ public class AdminOperationsService {
         components.add(discoveryComponent("algorithm-judge-worker", "algorithm-judge-worker", "判题 Worker 实例已注册。"));
         components.add(databaseComponent());
         components.add(redisComponent());
-        components.add(providerComponent());
-        components.add(openTalkingComponent());
+        components.add(providerComponent(providers));
+        components.add(openTalkingComponent(providers));
 
         AdminAiOpsTaskSummaryRow tasks = aiMapper.selectTaskSummary();
         long aiBacklog = value(tasks == null ? null : tasks.getBacklog());
@@ -94,29 +97,48 @@ public class AdminOperationsService {
         }
     }
 
-    private AdminOperationsDtos.Component providerComponent() {
-        List<AiProviderConfig> providers = providerMapper.selectList(null);
+    private AdminOperationsDtos.Component providerComponent(List<AiProviderConfig> providers) {
         AiProviderConfig llm = providers.stream().filter(item -> "llm".equals(item.getKind()) && truthy(item.getEnabled())
                 && truthy(item.getTextDefault())).findFirst().orElse(null);
         if (llm == null) return component("ai-provider", "AI Provider", "ATTENTION", "需要关注",
                 "没有启用的文字默认 Provider。", "在 AI 中心检查 Provider 配置并执行带超时的连通性测试。");
         boolean configured = hasText(llm.getBaseUrl()) && hasText(llm.getChatModel()) && hasText(llm.getApiKeyCipher());
-        return component("ai-provider", "AI Provider", configured ? "ATTENTION" : "DOWN",
-                configured ? "已配置，待测试" : "配置不完整",
-                configured ? "文字默认 Provider 已配置；本摘要不主动调用外部模型。" : "文字默认 Provider 缺少必要配置。",
-                "打开 AI 中心执行明确显示成功、失败或超时的 Provider 测试。");
+        if (!configured) return component("ai-provider", "AI Provider", "DOWN", "配置不完整",
+                "文字默认 Provider 缺少必要配置。", "打开 AI 中心补充 Provider 配置并执行连通性测试。");
+        return testedProviderComponent("ai-provider", "AI Provider", llm,
+                "文字默认 Provider 已配置，尚未执行连通性测试。");
     }
 
-    private AdminOperationsDtos.Component openTalkingComponent() {
-        AiProviderConfig provider = providerMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AiProviderConfig>()
-                .eq(AiProviderConfig::getCode, "open-talking-virtual-human").last("LIMIT 1"));
+    private AdminOperationsDtos.Component openTalkingComponent(List<AiProviderConfig> providers) {
+        AiProviderConfig provider = providers.stream()
+                .filter(item -> "open-talking-virtual-human".equals(item.getCode())).findFirst().orElse(null);
         if (provider == null || !truthy(provider.getEnabled())) {
             return component("opentalking", "OpenTalking 上游", "DOWN", "未启用",
                     "唯一虚拟人链路未启用。", "只配置并检查 OpenTalking，不恢复其他虚拟人或讯飞链路。");
         }
-        return component("opentalking", "OpenTalking 上游", "ATTENTION", "待测试",
-                "OpenTalking 配置已启用；本摘要不展示上游地址，也不主动暴露内部连接信息。",
-                "在 AI Provider 中执行 OpenTalking 带超时的连通性测试。");
+        return testedProviderComponent("opentalking", "OpenTalking 上游", provider,
+                "OpenTalking 配置已启用，尚未执行连通性测试。");
+    }
+
+    private AdminOperationsDtos.Component testedProviderComponent(String code, String label,
+                                                                   AiProviderConfig provider, String pendingSummary) {
+        String state = provider.getLastTestState();
+        String time = provider.getLastTestedAt() == null ? "" : "，测试时间 " + provider.getLastTestedAt().format(STATUS_TIME);
+        String latency = provider.getLastTestLatencyMs() == null ? "" : "，耗时 " + provider.getLastTestLatencyMs() + " ms";
+        if ("SUCCESS".equals(state)) {
+            return component(code, label, "UP", "测试通过",
+                    "最近一次连通性测试成功" + latency + time + "。", "暂不需要处理；配置变更后请重新测试。");
+        }
+        if ("TIMEOUT".equals(state)) {
+            return component(code, label, "DOWN", "测试超时",
+                    "最近一次连通性测试超时" + latency + time + "。", "检查服务状态和网络后，在 AI Provider 中重新测试。");
+        }
+        if ("FAILED".equals(state)) {
+            return component(code, label, "DOWN", "测试失败",
+                    "最近一次连通性测试失败" + latency + time + "。", "检查服务配置和运行状态后，在 AI Provider 中重新测试。");
+        }
+        return component(code, label, "ATTENTION", "待测试", pendingSummary,
+                "在 AI Provider 中执行带超时的连通性测试。");
     }
 
     private AdminOperationsDtos.Component registryComponent() {

@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.settings;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.common.BusinessException;
@@ -153,7 +154,20 @@ public class AiProviderService {
         requireAdmin();
         AiProviderConfig config = require(id);
         AiProviderDtos.ProviderTestResult result = probe(config);
-        audit("AI_PROVIDER_TEST", config.getId(), "Provider 测试完成，状态 " + result.state());
+        AiProviderConfig status = new AiProviderConfig();
+        status.setLastTestState(result.state());
+        status.setLastTestStatusCode(result.statusCode());
+        status.setLastTestLatencyMs(result.latencyMs());
+        status.setLastTestMessage(result.message());
+        status.setLastTestedAt(result.testedAt());
+        LambdaUpdateWrapper<AiProviderConfig> wrapper = new LambdaUpdateWrapper<AiProviderConfig>()
+                .eq(AiProviderConfig::getId, config.getId());
+        if (config.getUpdatedAt() != null) wrapper.eq(AiProviderConfig::getUpdatedAt, config.getUpdatedAt());
+        if (mapper.update(status, wrapper) == 0) {
+            result = new AiProviderDtos.ProviderTestResult(false, null, "FAILED", result.latencyMs(),
+                    "测试期间 Provider 配置发生变化，请重新测试", result.testedAt());
+        }
+        auditTest(config.getId(), result);
         return result;
     }
 
@@ -258,6 +272,15 @@ public class AiProviderService {
         config.setTextDefault(Boolean.TRUE.equals(request.textDefault()) ? 1 : 0);
         config.setVoiceDefault(Boolean.TRUE.equals(request.voiceDefault()) ? 1 : 0);
         config.setRemark(trim(request.remark()));
+        clearTestStatus(config);
+    }
+
+    private void clearTestStatus(AiProviderConfig config) {
+        config.setLastTestState(null);
+        config.setLastTestStatusCode(null);
+        config.setLastTestLatencyMs(null);
+        config.setLastTestMessage(null);
+        config.setLastTestedAt(null);
     }
 
     private String nextSecret(String oldCipher, String incoming) {
@@ -315,7 +338,12 @@ public class AiProviderService {
                 truthy(config.getEnabled()),
                 truthy(config.getTextDefault()),
                 truthy(config.getVoiceDefault()),
-                config.getRemark()
+                config.getRemark(),
+                config.getLastTestState(),
+                config.getLastTestStatusCode(),
+                config.getLastTestLatencyMs(),
+                config.getLastTestMessage(),
+                config.getLastTestedAt()
         );
     }
 
@@ -367,7 +395,7 @@ public class AiProviderService {
     private AiProviderDtos.ProviderTestResult result(boolean success, Integer statusCode, long started,
                                                      String state, String message) {
         return new AiProviderDtos.ProviderTestResult(success, statusCode, state,
-                Math.max(1, (System.nanoTime() - started) / 1_000_000), message);
+                Math.max(1, (System.nanoTime() - started) / 1_000_000), message, LocalDateTime.now());
     }
 
     private void requireAdmin() {
@@ -376,6 +404,16 @@ public class AiProviderService {
 
     private void audit(String action, Long providerId, String summary) {
         if (auditService != null) auditService.success("AI_PROVIDER", action, "AI_PROVIDER", providerId, null, summary);
+    }
+
+    private void auditTest(Long providerId, AiProviderDtos.ProviderTestResult result) {
+        if (auditService == null) return;
+        String summary = "Provider 测试完成，状态 " + result.state();
+        if (result.success()) {
+            auditService.success("AI_PROVIDER", "AI_PROVIDER_TEST", "AI_PROVIDER", providerId, null, summary);
+        } else {
+            auditService.failure("AI_PROVIDER", "AI_PROVIDER_TEST", "AI_PROVIDER", providerId, null, summary);
+        }
     }
 
     private boolean truthy(Integer value) {

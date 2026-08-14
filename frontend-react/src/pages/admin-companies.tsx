@@ -1,6 +1,7 @@
-import { Building2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Search, X } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Loader2, Plus, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AdminRowActionLink } from '@/components/admin/admin-row-actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -133,7 +134,7 @@ export function AdminCompanies() {
             <td data-label="成员" className="px-5 py-4 text-muted-foreground">{company.memberCount} 人</td>
             <td data-label="状态" className="px-5 py-4"><Badge tone={company.status === 1 ? 'success' : 'default'}>{statusLabel(company.status)}</Badge></td>
             <td data-label="更新时间" className="px-5 py-4 text-muted-foreground">{formatDate(company.updatedAt)}</td>
-            <td data-label="操作" className="px-5 py-4 text-right"><Button type="button" variant="secondary" className="h-9 gap-1 px-3 text-xs" onClick={() => navigate(`/admin/companies/${company.id}`)}><Eye className="h-3.5 w-3.5" />查看企业</Button></td>
+            <td data-label="操作" className="px-5 py-4 text-right"><AdminRowActionLink to={`/admin/companies/${company.id}`} /></td>
           </tr>)}{!page.records.length && <tr><td data-mobile-full colSpan={6} className="p-14 text-center text-muted-foreground">暂无符合条件的企业。可以创建第一家企业，或清除筛选条件。</td></tr>}</tbody>
         </table>
         <div className="flex flex-col gap-3 border-t border-border px-5 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>第 {pageNo} / {totalPages} 页 · 共 {page.total} 家企业</span><div className="flex gap-2"><Button type="button" variant="secondary" className="h-9 px-3" disabled={pageNo <= 1} onClick={() => updateQuery({ pageNo: pageNo - 1 })}><ChevronLeft className="h-4 w-4" />上一页</Button><Button type="button" variant="secondary" className="h-9 px-3" disabled={pageNo >= totalPages} onClick={() => updateQuery({ pageNo: pageNo + 1 })}>下一页<ChevronRight className="h-4 w-4" /></Button></div></div>

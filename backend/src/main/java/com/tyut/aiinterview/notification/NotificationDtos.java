@@ -24,6 +24,7 @@ public final class NotificationDtos {
 
     public record Query(Long pageNo, Long pageSize) {}
     public record Notification(Long id, String notificationType, String title, String content,
-                               String businessType, Long businessId, boolean read, LocalDateTime createdAt) {}
+                               String businessType, Long businessId, String actionPath,
+                               boolean read, LocalDateTime createdAt) {}
     public record NotificationPage(List<Notification> records, long total, long pageNo, long pageSize) {}
 }

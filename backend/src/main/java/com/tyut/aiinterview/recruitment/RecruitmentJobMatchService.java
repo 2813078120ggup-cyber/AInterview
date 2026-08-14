@@ -103,6 +103,27 @@ public class RecruitmentJobMatchService {
         }
     }
 
+    public void markLeaseExpired(AiTask task) {
+        JsonNode input = tree(task.getInputPayload());
+        Long applicationId = input.path("applicationId").asLong(0);
+        int evaluationVersion = input.path("evaluationVersion").asInt(1);
+        String error = "岗位匹配任务执行超时，请重新发起匹配";
+        applicationMapper.update(null, new LambdaUpdateWrapper<JobApplication>()
+                .eq(JobApplication::getId, applicationId)
+                .eq(JobApplication::getMatchEvaluationVersion, evaluationVersion)
+                .in(JobApplication::getMatchStatus, PENDING, PROCESSING)
+                .set(JobApplication::getMatchStatus, FAILED)
+                .set(JobApplication::getMatchError, error)
+                .set(JobApplication::getMatchCompletedAt, LocalDateTime.now()));
+        evaluationMapper.update(null, new LambdaUpdateWrapper<JobMatchEvaluation>()
+                .eq(JobMatchEvaluation::getApplicationId, applicationId)
+                .eq(JobMatchEvaluation::getAiTaskId, task.getId())
+                .in(JobMatchEvaluation::getStatus, PENDING, PROCESSING)
+                .set(JobMatchEvaluation::getStatus, FAILED)
+                .set(JobMatchEvaluation::getErrorMessage, error)
+                .set(JobMatchEvaluation::getFinishedAt, LocalDateTime.now()));
+    }
+
     private void markProcessing(JobApplication application, int version, int evaluationVersion) {
         int updated = applicationMapper.update(null, new LambdaUpdateWrapper<JobApplication>()
                 .eq(JobApplication::getId, application.getId())

@@ -1,6 +1,7 @@
-import { AlertTriangle, BriefcaseBusiness, ChevronLeft, ChevronRight, Clock3, ExternalLink, Loader2, Radar, RefreshCw, Search, TimerReset } from 'lucide-react'
+import { AlertTriangle, BriefcaseBusiness, ChevronLeft, ChevronRight, Clock3, Loader2, Radar, RefreshCw, Search, TimerReset } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { AdminRowActionLink } from '@/components/admin/admin-row-actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -153,7 +154,7 @@ export function AdminRecruitment() {
           <td data-label="匹配任务" className="px-5 py-4">{item.matchTask ? <div className="flex flex-wrap items-center gap-2"><Badge tone={taskTone(item.matchTask.status)}>{taskLabel(item.matchTask)}</Badge>{item.matchTask.retryable && <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={() => void retry(item.matchTask!)} disabled={retrying === item.matchTask.id}>{retrying === item.matchTask.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TimerReset className="h-3.5 w-3.5" />}重试</Button>}</div> : <span className="text-xs text-muted-foreground">未创建</span>}</td>
           <td data-label="面试 / 报告" className="px-5 py-4"><div className="flex flex-wrap gap-2">{item.interview ? <Badge tone={item.interview.status === 7 ? 'danger' : item.interview.status === 6 ? 'success' : 'info'}>{item.interview.status === 7 ? '面试失败' : item.interview.status === 6 ? '报告就绪' : item.interview.status === 5 ? '报告生成中' : '面试已关联'}</Badge> : <span className="text-xs text-muted-foreground">无面试</span>}{item.interview?.reportTask && <Badge tone={taskTone(item.interview.reportTask.status)}>报告 {taskLabel(item.interview.reportTask)}</Badge>}</div></td>
           <td data-label="下一步观测" className="px-5 py-4"><span className="flex items-center gap-2 text-xs text-muted-foreground">{item.stale ? <Clock3 className="h-3.5 w-3.5 text-[var(--accent)]" /> : <BriefcaseBusiness className="h-3.5 w-3.5" />}{item.nextAction}</span></td>
-          <td data-label="详情" className="px-5 py-4 text-right"><Link to={`/admin/recruitment/applications/${item.id}`} state={{ from: window.location.search }} className="inline-flex h-9 items-center gap-1 rounded-full border border-border px-3 text-xs font-semibold hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]">查看关联<ExternalLink className="h-3.5 w-3.5" /></Link></td>
+          <td data-label="详情" className="px-5 py-4 text-right"><AdminRowActionLink to={`/admin/recruitment/applications/${item.id}`} state={{ from: window.location.search }} /></td>
         </tr>)}{!page.records.length && <tr><td data-mobile-full colSpan={6} className="p-14 text-center text-muted-foreground">当前筛选下没有招聘申请。平台运营页不会创建或修改业务决定。</td></tr>}</tbody></table>
         <div className="flex flex-col gap-3 border-t border-border px-5 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>第 {pageNo} / {totalPages} 页 · 共 {page.total} 份申请</span><div className="flex gap-2"><Button type="button" variant="secondary" className="h-9 px-3" disabled={pageNo <= 1} onClick={() => updateQuery({ pageNo: pageNo - 1 })}><ChevronLeft className="h-4 w-4" />上一页</Button><Button type="button" variant="secondary" className="h-9 px-3" disabled={pageNo >= totalPages} onClick={() => updateQuery({ pageNo: pageNo + 1 })}>下一页<ChevronRight className="h-4 w-4" /></Button></div></div>
       </>}

@@ -197,7 +197,7 @@ export function AdminInterviewReview() {
       disposed = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [selectedSegment?.id])
+  }, [selectedSegment])
 
   const answersByQuestion = useMemo(() => new Map(answers.map(item => [String(item.interviewQuestionId), item])), [answers])
   const segmentsByQuestion = useMemo(() => {

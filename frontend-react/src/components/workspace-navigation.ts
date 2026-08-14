@@ -18,6 +18,7 @@ import {
   NotebookPen,
   Radar,
   Settings2,
+  UserCog,
   UserRound,
   UsersRound,
   type LucideIcon,
@@ -34,7 +35,7 @@ export type WorkspaceDomainKey =
   | 'data'
   | 'organization'
   | 'platform'
-  | 'tenants'
+  | 'users'
   | 'business'
   | 'content'
   | 'ai'
@@ -133,27 +134,26 @@ const companyDomains: WorkspaceDomain[] = [
 
 const adminDomains: WorkspaceDomain[] = [
   {
-    key: 'platform', label: '平台', description: '运行概览与基础配置', path: '/admin/workspace',
+    key: 'platform', label: '平台', description: '平台运行概览', path: '/admin/workspace',
     items: [
       { path: '/admin/workspace', label: '运行总览', description: '查看平台规模与运行状态', icon: LayoutDashboard, end: true },
-      { path: '/admin/settings', label: '平台设置', description: '维护平台基础配置', icon: Settings2 },
     ],
   },
   {
-    key: 'tenants', label: '租户', description: '企业、账号与成员', path: '/admin/companies',
+    key: 'users', label: '用户', description: '企业、账号、员工与角色', path: '/admin/companies',
     items: [
       { path: '/admin/companies', label: '企业管理', description: '维护企业资料与成员入口', icon: Building2 },
       { path: '/admin/users', label: '用户与账号', description: '管理账号、企业成员与状态', icon: UsersRound },
-      { path: '/admin/roles', label: '角色与权限', description: '查看角色范围与权限矩阵', icon: KeyRound },
+      { path: '/admin/employees', label: '员工管理', description: '管理平台员工职责与账号状态', icon: UserCog },
       { path: '/admin/candidates', label: '候选人档案', description: '查看候选人业务资料与面试记录', icon: UserRound },
+      { path: '/admin/roles', label: '角色与权限', description: '查看角色范围与权限矩阵', icon: KeyRound },
     ],
   },
   {
-    key: 'business', label: '业务', description: '招聘、面试与服务反馈', path: '/admin/interviews',
+    key: 'business', label: '业务', description: '招聘与面试运营', path: '/admin/interviews',
     items: [
       { path: '/admin/recruitment', label: '招聘运营', description: '定位跨企业招聘异常', icon: Radar },
       { path: '/admin/interviews', label: '面试运营', description: '安排、回顾与报告', icon: CalendarDays },
-      { path: '/admin/tickets', label: '服务工单', description: '处理用户服务请求', icon: MessageSquareWarning },
     ],
   },
   {
@@ -173,9 +173,11 @@ const adminDomains: WorkspaceDomain[] = [
     ],
   },
   {
-    key: 'operations', label: '运维', description: '服务状态与操作追踪', path: '/admin/operations',
+    key: 'operations', label: '运维', description: '服务、配置与操作追踪', path: '/admin/operations',
     items: [
       { path: '/admin/operations', label: '运行状态', description: '查看服务状态与处理建议', icon: Activity },
+      { path: '/admin/settings', label: '平台设置', description: '维护平台基础配置', icon: Settings2 },
+      { path: '/admin/tickets', label: '服务工单', description: '处理用户服务请求', icon: MessageSquareWarning },
       { path: '/admin/audit-logs', label: '操作审计', description: '追踪平台关键操作', icon: History },
     ],
   },

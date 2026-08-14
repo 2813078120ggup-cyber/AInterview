@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, AlertCircle, Check, Clock3, Eye, EyeOff, History, KeyRound, Laptop, Loader2, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, Smartphone, Tablet, Wifi, X } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AccountSettingsNavigation } from '@/components/account-settings-navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -70,6 +70,7 @@ const passwordRule = '8–64 位，须包含至少一个英文字母和一个数
 const fieldClass = 'mt-2 h-12 w-full rounded-2xl border border-border bg-background px-4 pr-12 text-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20'
 
 export function CandidateSecurity() {
+  const location = useLocation()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -126,7 +127,7 @@ export function CandidateSecurity() {
       <p className="max-w-2xl text-sm leading-6 text-muted-foreground">管理个人资料、联系方式和登录安全。</p>
     </header>
 
-    <AccountSettingsNavigation />
+    {location.pathname.startsWith('/candidate/') && <AccountSettingsNavigation />}
 
     <div aria-live="polite" aria-atomic="true">
       {success && <Notice tone="success" icon={<Check className="h-4 w-4" aria-hidden="true" />}>{success}</Notice>}

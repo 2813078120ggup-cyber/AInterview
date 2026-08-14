@@ -75,6 +75,34 @@ class RoleManagementServiceTest {
         verify(auditService).denied("AUTHORIZATION", "ROLE_PERMISSIONS_UPDATED", "ROLE", 8L, null, "角色版本冲突");
     }
 
+    @Test
+    void candidateIdentityCannotReceiveBackendPermissions() {
+        Role candidate = role(2L, "CANDIDATE", 1);
+        when(roleMapper.selectById(2L)).thenReturn(candidate);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.assignPermissions(2L,
+                new RoleDtos.AssignPermissionsRequest(List.of(11L), 1, true)));
+
+        assertEquals(403, exception.getStatus().value());
+        assertEquals("候选人能力由身份和本人资源边界固定控制，不支持分配后台权限", exception.getMessage());
+        verify(permissionMapper, never()).selectBatchIds(any());
+        verify(rolePermissionMapper, never()).delete(any());
+        verify(auditService).denied("AUTHORIZATION", "ROLE_PERMISSIONS_UPDATED", "ROLE", 2L, null,
+                "候选人身份不参与后台权限矩阵");
+    }
+
+    @Test
+    void candidateRoleNeverExposesStalePermissionRelations() {
+        Role candidate = role(2L, "CANDIDATE", 1);
+        when(roleMapper.selectList(any())).thenReturn(List.of(candidate));
+        when(adminUserMapper.countUsersByRoleId(2L)).thenReturn(5L);
+
+        RoleDtos.RoleVO result = service.roles().get(0);
+
+        assertEquals(List.of(), result.permissionIds());
+        verify(rolePermissionMapper, never()).selectList(any());
+    }
+
     private Role role(Long id, String code, int version) {
         Role role = new Role();
         role.setId(id);

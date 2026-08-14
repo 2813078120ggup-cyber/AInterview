@@ -2,6 +2,7 @@ import { Activity, AudioLines, Bot, BrainCircuit, CheckCircle2, Database, Edit3,
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { AdminConfirmDialog } from '@/components/admin-confirm-dialog'
+import { ProviderTestStatus, type ProviderTestResult } from '@/components/provider-test-status'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect } from '@/components/ui/responsive-select'
@@ -24,13 +25,11 @@ type Provider = {
   textDefault: boolean
   voiceDefault: boolean
   remark: string
-}
-
-type ProviderTestResult = {
-  success: boolean
-  statusCode: number | null
-  latencyMs: number
-  message: string
+  lastTestState?: 'SUCCESS' | 'FAILED' | 'TIMEOUT' | null
+  lastTestStatusCode?: number | null
+  lastTestLatencyMs?: number | null
+  lastTestMessage?: string | null
+  lastTestedAt?: string | null
 }
 
 const emptyProvider: Provider = {
@@ -81,6 +80,18 @@ function defaultDeleteReason(item: Provider) {
 
 function secretLabel(value: string) {
   return value || '未配置'
+}
+
+function persistedTestResult(item: Provider): ProviderTestResult | undefined {
+  if (!item.lastTestState || !item.lastTestMessage || item.lastTestLatencyMs == null) return undefined
+  return {
+    success: item.lastTestState === 'SUCCESS',
+    state: item.lastTestState,
+    statusCode: item.lastTestStatusCode ?? null,
+    latencyMs: item.lastTestLatencyMs,
+    message: item.lastTestMessage,
+    testedAt: item.lastTestedAt,
+  }
 }
 
 function providerLabels(kind: ProviderKind, code = '') {
@@ -140,6 +151,7 @@ export function AdminSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testingId, setTestingId] = useState('')
+  const [testResults, setTestResults] = useState<Record<string, ProviderTestResult>>({})
   const [updatingId, setUpdatingId] = useState('')
   const [deletingId, setDeletingId] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Provider>()
@@ -160,7 +172,12 @@ export function AdminSettings() {
     setLoading(true)
     try {
       const data = await request<Provider[]>('/v1/admin/ai-providers')
-      setItems(data.map(item => ({ ...item, id: String(item.id) })))
+      const normalized = data.map(item => ({ ...item, id: String(item.id) }))
+      setItems(normalized)
+      setTestResults(Object.fromEntries(normalized.flatMap(item => {
+        const result = persistedTestResult(item)
+        return result ? [[item.id, result]] : []
+      })))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '服务配置加载失败，请稍后重试。')
     } finally {
@@ -180,6 +197,11 @@ export function AdminSettings() {
       const existed = items.some(item => item.id === editing.id)
       const path = existed ? `/v1/admin/ai-providers/${editing.id}` : '/v1/admin/ai-providers'
       const saved = await request<Provider>(path, { method: existed ? 'PUT' : 'POST', body: JSON.stringify(editing) })
+      setTestResults(previous => {
+        const next = { ...previous }
+        delete next[editing.id]
+        return next
+      })
       setItems(previous => existed ? previous.map(item => item.id === editing.id ? { ...saved, id: String(saved.id) } : item) : [{ ...saved, id: String(saved.id) }, ...previous])
       setEditing(null)
       setMessage(existed ? '服务配置已保存。' : '服务配置已新增。')
@@ -196,6 +218,11 @@ export function AdminSettings() {
     try {
       const next = { ...item, ...patch }
       const saved = await request<Provider>(`/v1/admin/ai-providers/${item.id}`, { method: 'PUT', body: JSON.stringify(next) })
+      setTestResults(previous => {
+        const results = { ...previous }
+        delete results[item.id]
+        return results
+      })
       setItems(previous => previous.map(current => current.id === item.id ? { ...saved, id: String(saved.id) } : current))
       setMessage(`${item.name} 已更新。`)
       void refresh()
@@ -222,12 +249,24 @@ export function AdminSettings() {
 
   async function testProvider(item: Provider) {
     setTestingId(item.id)
+    setTestResults(previous => ({
+      ...previous,
+      [item.id]: { success: false, state: 'TESTING', statusCode: null, latencyMs: 0, message: '正在连接服务并检查健康状态，请稍候…' },
+    }))
     try {
       const result = await request<ProviderTestResult>(`/v1/admin/ai-providers/${item.id}/test`, { method: 'POST' })
-      const statusText = result.statusCode ? `HTTP ${result.statusCode} · ` : ''
-      setMessage(`${item.name}：${result.success ? '测试通过' : '测试未通过'}，${statusText}${result.latencyMs}ms。${result.message}`)
+      setTestResults(previous => ({ ...previous, [item.id]: result }))
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '连通性测试失败，请检查服务地址与密钥。')
+      setTestResults(previous => ({
+        ...previous,
+        [item.id]: {
+          success: false,
+          state: 'FAILED',
+          statusCode: null,
+          latencyMs: 0,
+          message: error instanceof Error ? error.message : '连通性测试失败，请检查服务地址与密钥。',
+        },
+      }))
     } finally {
       setTestingId('')
     }
@@ -311,7 +350,7 @@ export function AdminSettings() {
                     disabled={!testable || testingId === item.id || updating || deleting}
                     title={!item.enabled ? '请先启用服务。' : !testable ? '请先配置服务地址。' : '测试当前服务连通性'}
                     onClick={() => void testProvider(item)}
-                  >{testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}测试</Button>
+                  >{testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}{testingId === item.id ? '测试中…' : '测试'}</Button>
                   <Button
                     variant={item.enabled ? 'secondary' : 'primary'}
                     className="h-10 min-w-0 px-3 sm:px-4"
@@ -339,6 +378,7 @@ export function AdminSettings() {
                     onClick={() => setDeleteTarget(item)}
                   >{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}删除</Button>
                 </div>
+                <ProviderTestStatus result={testResults[item.id]} />
               </div>
             </Card>
           })}

@@ -11,15 +11,25 @@ const sessions = [
 
 async function establishSession(context: BrowserContext, accessToken: string, refreshToken: string) {
   await context.addInitScript(({ accessToken, refreshToken, profile }) => {
+    if (localStorage.getItem('e2e_session_seeded')) return
     localStorage.setItem('access_token', accessToken)
     localStorage.setItem('refresh_token', refreshToken)
     localStorage.setItem('ai_interview_profile', JSON.stringify(profile))
+    localStorage.setItem('e2e_session_seeded', '1')
   }, { accessToken, refreshToken, profile })
 }
 
-async function mockWorkspace(page: Page) {
+async function mockWorkspace(page: Page, mockProfile = false) {
   await page.route('**/api/v1/notifications/unread-count', route => route.fulfill({ json: { data: 0 } }))
   await page.route('**/api/v1/notifications**', route => route.fulfill({ json: { data: { records: [], total: 0, pageNo: 1, pageSize: 20 } } }))
+  await page.route('**/api/v1/account/security-events**', route => route.fulfill({
+    json: { data: { records: [], total: 0, pageNo: 1, pageSize: 15 } },
+  }))
+  if (mockProfile) {
+    await page.route('**/api/v1/account/profile', route => route.fulfill({
+      json: { data: { realName: profile.realName, avatarAvailable: false } },
+    }))
+  }
 }
 
 test('two devices show current first and revoke other devices without clearing current session', async ({ browser, baseURL }) => {
@@ -29,7 +39,7 @@ test('two devices show current first and revoke other devices without clearing c
   await establishSession(deviceB, 'access-b', 'refresh-b')
   const pageA = await deviceA.newPage()
   const pageB = await deviceB.newPage()
-  await mockWorkspace(pageA)
+  await mockWorkspace(pageA, true)
   await mockWorkspace(pageB)
 
   let sessionLoads = 0
@@ -43,6 +53,10 @@ test('two devices show current first and revoke other devices without clearing c
     return route.fulfill({ json: { data: null } })
   })
   await pageB.route('**/api/v1/account/profile', route => route.fulfill({ status: 401, json: { code: 40100, message: '登录已失效' } }))
+  await pageB.route('**/api/v1/auth/refresh', route => {
+    expect(route.request().postDataJSON()).toEqual({ refreshToken: 'refresh-b' })
+    return route.fulfill({ status: 401, json: { code: 40100, message: '刷新令牌已失效' } })
+  })
 
   await pageA.goto(`${baseURL}/candidate/settings/security?context=recruitment`)
   const cards = pageA.getByRole('article')
@@ -68,7 +82,9 @@ test('two devices show current first and revoke other devices without clearing c
   expect(await pageA.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
   await pageB.goto(`${baseURL}/candidate/settings/profile`)
-  await expect(pageB.getByText('登录已失效')).toBeVisible()
+  await expect(pageB).toHaveURL(/\/login\?next=%2Fcandidate%2Fsettings%2Fprofile$/)
+  await expect.poll(() => pageB.evaluate(() => localStorage.getItem('access_token'))).toBeNull()
+  await expect.poll(() => pageB.evaluate(() => localStorage.getItem('refresh_token'))).toBeNull()
   expect(await pageB.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
   await deviceA.close()
@@ -79,7 +95,7 @@ test('revoking current device clears local credentials and failed revoke keeps l
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   await establishSession(context, 'access-current', 'refresh-current')
   const page = await context.newPage()
-  await mockWorkspace(page)
+  await mockWorkspace(page, true)
   await page.route('**/api/v1/account/sessions', route => route.fulfill({ json: { data: sessions } }))
   let attempts = 0
   await page.route('**/api/v1/account/sessions/session-current', route => {

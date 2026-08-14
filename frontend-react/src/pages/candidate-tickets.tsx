@@ -1,5 +1,5 @@
 import { ArrowLeft, MessageSquareWarning, Plus, RefreshCw, Search } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,7 +39,9 @@ export function CandidateTickets() {
     }
   }
 
-  useEffect(() => { load() }, [status])
+  const loadEffect = useEffectEvent(load)
+
+  useEffect(() => { void loadEffect() }, [status])
 
   return <div className="space-y-6">
     <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">

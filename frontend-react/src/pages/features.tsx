@@ -10,14 +10,21 @@ import { JobMatchMockup } from '@/features/mockups/JobMatchMockup'
 import { ReportMockup } from '@/features/mockups/ReportMockup'
 import { ResumeAnalysisMockup } from '@/features/mockups/ResumeAnalysisMockup'
 import { recruitmentWorkflow } from '@/features/mock-data'
+import { loginPath, postLoginDestination } from '@/lib/navigation'
+import { profile } from '@/lib/session'
 import '@/features/features.css'
+
+function platformEntry(requested?: string) {
+  const current = profile()
+  return current ? postLoginDestination(current.roles, requested) : loginPath(requested)
+}
 
 function FeaturesNav() {
   const navigate = useNavigate()
   return <header className="features-nav">
     <Link to="/features" className="features-brand" aria-label="AInterview 产品能力首页"><span className="features-brand-mark"><Bot size={18} /></span><span><strong>AInterview</strong><small>招聘协同与智能面试</small></span></Link>
     <nav aria-label="产品能力导航" className="features-nav-links"><a href="#capabilities">产品能力</a><a href="#interview">智能面试</a><a href="#workflow">招聘流程</a></nav>
-    <div className="features-nav-actions"><Button type="button" className="features-nav-button" onClick={() => navigate('/login')}>进入平台<ArrowRight size={15} /></Button></div>
+    <div className="features-nav-actions"><Button type="button" className="features-nav-button" onClick={() => navigate(platformEntry())}>进入平台<ArrowRight size={15} /></Button></div>
   </header>
 }
 
@@ -62,7 +69,7 @@ export function FeaturesPage() {
             <p className="features-eyebrow">招聘协同 · 面试评估</p>
             <h1 id="features-hero-title">见人，见岗，<em>见依据。</em></h1>
             <p className="features-hero-description">将岗位要求、候选人简历、面试记录与评估报告纳入同一流程，支持从申请提交到企业复核的全过程管理。</p>
-            <div className="features-hero-actions"><Button type="button" onClick={() => navigate('/login')}>进入平台<ArrowRight size={16} /></Button><a href="#capabilities" className="features-outline-link">查看核心能力<ChevronRight size={16} /></a></div>
+            <div className="features-hero-actions"><Button type="button" onClick={() => navigate(platformEntry())}>进入平台<ArrowRight size={16} /></Button><a href="#capabilities" className="features-outline-link">查看核心能力<ChevronRight size={16} /></a></div>
             <div className="features-hero-note"><ShieldCheck size={15} /><span>系统记录过程并辅助评估，录用结论由企业作出</span></div>
           </Reveal>
           <Reveal className="features-hero-demo" delay={100}><HeroOverviewMockup /></Reveal>
@@ -95,7 +102,7 @@ export function FeaturesPage() {
 
       <section id="workflow" className="features-workflow-section" aria-labelledby="workflow-title"><div className="features-container"><Reveal className="features-workflow-heading"><FeatureHeading id="workflow-title" align="center" title="从投递到结果，节点清楚，责任明确。" description="申请状态、面试安排、评估报告与通知记录按流程关联，便于候选人与招聘团队查看当前进度。" /></Reveal><Reveal delay={80}><div className="features-workflow-rail">{recruitmentWorkflow.map(([shortLabel, chinese], index) => <div className="features-workflow-node" key={shortLabel}><span className="features-workflow-node-index">{String(index + 1).padStart(2, '0')}</span><div><strong>{shortLabel}</strong><span>{chinese}</span></div>{index < recruitmentWorkflow.length - 1 && <span className="features-workflow-connector" aria-hidden="true" />}</div>)}</div></Reveal></div></section>
 
-      <section className="features-final-cta" aria-labelledby="final-cta-title"><div className="features-container"><Reveal className="features-final-cta-inner"><div><p className="features-eyebrow">统一招聘流程，保留完整依据</p><h2 id="final-cta-title">从岗位出发，把每一步落到记录里。</h2><p>候选人可以浏览岗位、管理申请并参加面试；企业可以管理岗位、复核申请和安排后续流程。</p></div><div className="features-final-cta-actions"><Button type="button" onClick={() => navigate('/login')}>进入平台<ArrowRight size={16} /></Button><Button type="button" variant="secondary" onClick={() => navigate('/login')}>查看招聘岗位<ChevronRight size={16} /></Button></div></Reveal></div></section>
+      <section className="features-final-cta" aria-labelledby="final-cta-title"><div className="features-container"><Reveal className="features-final-cta-inner"><div><p className="features-eyebrow">统一招聘流程，保留完整依据</p><h2 id="final-cta-title">从岗位出发，把每一步落到记录里。</h2><p>候选人可以浏览岗位、管理申请并参加面试；企业可以管理岗位、复核申请和安排后续流程。</p></div><div className="features-final-cta-actions"><Button type="button" onClick={() => navigate(platformEntry())}>进入平台<ArrowRight size={16} /></Button><Button type="button" variant="secondary" onClick={() => navigate(platformEntry('/jobs'))}>查看招聘岗位<ChevronRight size={16} /></Button></div></Reveal></div></section>
     </main>
     <footer className="features-footer"><div className="features-container features-footer-inner"><Link to="/features" className="features-brand"><span className="features-brand-mark"><Bot size={18} /></span><span><strong>AInterview</strong><small>招聘协同与智能面试</small></span></Link><span>让每一面，都算数。</span><div className="features-footer-links"><Link to="/login">登录</Link><a href="#top">回到顶部</a></div></div></footer>
   </div>

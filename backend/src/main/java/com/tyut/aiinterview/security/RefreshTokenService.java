@@ -69,10 +69,9 @@ public class RefreshTokenService {
             throw BusinessException.forbidden("用户不存在或已被禁用");
         }
         LocalDateTime now = LocalDateTime.now();
-        token.setLastUsedAt(now);
-        token.setRevokedAt(now);
-        token.setRevokedReason("ROTATED");
-        refreshTokenMapper.updateById(token);
+        if (refreshTokenMapper.rotateActiveToken(token.getId(), now) != 1) {
+            throw BusinessException.forbidden("刷新令牌无效或已过期");
+        }
         return issue(token.getUserId(), token.getSessionId(), clientIp, userAgent);
     }
 

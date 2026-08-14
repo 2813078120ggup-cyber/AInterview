@@ -101,6 +101,84 @@ export type AdminUser = {
   updatedAt?: string | null
 }
 
+export type AdminCandidateAccount = {
+  id: string
+  username: string
+  realName: string
+  status: number
+  avatarAvailable: boolean
+  email?: string | null
+  emailVerified: boolean
+  phone?: string | null
+  phoneVerified: boolean
+  availableLoginMethods: string[]
+  roles: string[]
+  identityConsistent: boolean
+  lastLoginAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type AdminCandidateProfile = {
+  account: AdminCandidateAccount
+  overview: {
+    resumeCount: number
+    applicationCount: number
+    interviewCount: number
+    reportCount: number
+    latestScore?: number | null
+    latestActivityAt?: string | null
+  }
+  resumes: {
+    id: string
+    title: string
+    fileName?: string | null
+    summary?: string | null
+    skills: string[]
+    defaultResume: boolean
+    parseStatus?: string | null
+    parseVersion?: number | null
+    parsedAt?: string | null
+    updatedAt?: string | null
+  }[]
+  applications: {
+    id: string
+    applicationNo: string
+    companyId: string
+    companyName: string
+    positionId: string
+    positionName: string
+    status: string
+    matchScore?: number | null
+    matchStatus?: string | null
+    submittedAt?: string | null
+    updatedAt?: string | null
+  }[]
+  interviews: {
+    id: string
+    title: string
+    scheduledAt?: string | null
+    duration?: number | null
+    status: number
+    type?: string | null
+    updatedAt?: string | null
+  }[]
+  reports: {
+    id: string
+    interviewId: string
+    interviewTitle: string
+    scheduledAt?: string | null
+    totalScore?: number | null
+    professionalScore?: number | null
+    expressionScore?: number | null
+    logicScore?: number | null
+    adaptabilityScore?: number | null
+    status: number
+    publishedAt?: string | null
+    generatedAt?: string | null
+  }[]
+}
+
 export type AdminRole = {
   id: string
   roleCode: string
@@ -187,6 +265,11 @@ export type AdminAiOperationsProvider = {
   enabled: boolean
   textDefault: boolean
   voiceDefault: boolean
+  lastTestState?: 'SUCCESS' | 'FAILED' | 'TIMEOUT' | null
+  lastTestStatusCode?: number | null
+  lastTestLatencyMs?: number | null
+  lastTestMessage?: string | null
+  lastTestedAt?: string | null
 }
 
 export type AdminAiOperationsPrompt = {

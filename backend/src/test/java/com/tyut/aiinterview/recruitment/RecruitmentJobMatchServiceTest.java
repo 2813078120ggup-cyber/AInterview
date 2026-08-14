@@ -111,4 +111,21 @@ class RecruitmentJobMatchServiceTest {
         assertEquals("FAILED", application.getMatchStatus());
         assertEquals("岗位匹配失败，请检查简历和岗位信息后重试", application.getMatchError());
     }
+
+    @Test
+    void leaseExpiryMarksCurrentMatchAndEvaluationFailed() {
+        JobApplicationMapper applicationMapper = mock(JobApplicationMapper.class);
+        JobMatchEvaluationMapper evaluationMapper = mock(JobMatchEvaluationMapper.class);
+        RecruitmentJobMatchService service = new RecruitmentJobMatchService(applicationMapper,
+                mock(JobPositionMapper.class), mock(CandidateResumeMapper.class),
+                mock(CandidateResumeAnalysisMapper.class), evaluationMapper, mock(DeepSeekGateway.class), objectMapper);
+        AiTask task = new AiTask();
+        task.setId(99L);
+        task.setInputPayload("{\"applicationId\":12,\"evaluationVersion\":3}");
+
+        service.markLeaseExpired(task);
+
+        verify(applicationMapper).update(any(), any());
+        verify(evaluationMapper).update(any(), any());
+    }
 }

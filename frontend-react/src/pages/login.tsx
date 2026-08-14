@@ -31,9 +31,10 @@ import {
   X,
 } from 'lucide-react'
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { request } from '@/lib/api'
+import { postLoginDestination } from '@/lib/navigation'
 import { establish } from '@/lib/session'
 
 type Login = {
@@ -50,12 +51,6 @@ type PasswordResetCodeResponse = {
 }
 
 type PasswordResetResponse = { sessionBehavior: string }
-
-function workspaceFor(roles: string[]) {
-  if (roles.includes('ADMIN')) return '/admin/interviews'
-  if (roles.includes('COMPANY_ADMIN')) return '/company'
-  return '/candidate/interviews'
-}
 
 const fieldClass =
   'mt-2 h-12 w-full rounded-[18px] border border-border bg-surface/72 px-4 text-sm outline-none transition duration-200 placeholder:text-muted-foreground/55 hover:border-[color-mix(in_srgb,var(--accent)_36%,var(--border))] focus:border-[var(--primary)] focus:bg-surface focus:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent)_12%,transparent)]'
@@ -130,6 +125,8 @@ const particles = [
 
 export function LoginPage() {
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedDestination = searchParams.get('next')
   const reduceMotion = useReducedMotion()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [busy, setBusy] = useState(false)
@@ -231,7 +228,7 @@ export function LoginPage() {
           body: JSON.stringify({ channel: loginChannel, target, verificationCode: loginCode.trim() }),
         })
         establish(result.token, result.refreshToken, result.user)
-        nav(workspaceFor(result.user.roles), { replace: true })
+        nav(postLoginDestination(result.user.roles, requestedDestination), { replace: true })
         return
       }
       const result = await request<Login>('/v1/auth/login', {
@@ -239,7 +236,7 @@ export function LoginPage() {
         body: JSON.stringify({ username: form.username, password: form.password }),
       })
       establish(result.token, result.refreshToken, result.user)
-      nav(workspaceFor(result.user.roles), { replace: true })
+      nav(postLoginDestination(result.user.roles, requestedDestination), { replace: true })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '登录失败，请检查账号信息。'
       if (mode === 'login' && loginMethod === 'code' && message.includes('还未注册')) {

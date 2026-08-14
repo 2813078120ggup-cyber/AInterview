@@ -21,6 +21,7 @@ import com.tyut.aiinterview.mapper.UserRoleMapper;
 import com.tyut.aiinterview.recruitment.CompanyAccessService;
 import com.tyut.aiinterview.security.CurrentUser;
 import com.tyut.aiinterview.security.LoginUser;
+import com.tyut.aiinterview.security.RefreshTokenService;
 import java.util.List;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
@@ -36,8 +37,9 @@ class CompanyTeamServiceTest {
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final CurrentUser currentUser = mock(CurrentUser.class);
     private final CompanyAccessService companyAccess = mock(CompanyAccessService.class);
+    private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     private final CompanyTeamService service = new CompanyTeamService(userMapper, userRoleMapper, roleMapper,
-            passwordEncoder, currentUser, companyAccess);
+            passwordEncoder, currentUser, companyAccess, null, refreshTokenService);
 
     @BeforeEach
     void initializeMyBatisPlusLambdaMetadata() {
@@ -127,6 +129,26 @@ class CompanyTeamServiceTest {
 
         assertTrue(exception.getStatus() == HttpStatus.BAD_REQUEST);
         verify(userRoleMapper, never()).delete(any());
+    }
+
+    @Test
+    void changedTeamRolesIncrementSecurityVersion() {
+        when(companyAccess.requirePermission("company:team:manage")).thenReturn(100L);
+        when(currentUser.id()).thenReturn(88L);
+        UserAccount recruiter = member(21L, 100L, 1);
+        recruiter.setSecurityVersion(2);
+        when(userMapper.selectById(21L)).thenReturn(recruiter);
+        when(userMapper.selectList(any())).thenReturn(List.of());
+        when(userRoleMapper.selectList(any())).thenReturn(List.of(userRole(21L, 11L)));
+        when(roleMapper.selectList(any())).thenReturn(List.of(role(12L, "COMPANY_INTERVIEWER")));
+        when(roleMapper.selectBatchIds(any())).thenReturn(List.of(role(11L, "COMPANY_RECRUITER")));
+
+        service.updateRoles(21L,
+                new CompanyTeamDtos.TeamRoleRequest(List.of("COMPANY_INTERVIEWER")));
+
+        assertEquals(3, recruiter.getSecurityVersion());
+        verify(userMapper).updateById(recruiter);
+        verify(refreshTokenService).revokeAllSessions(21L, "ROLES_CHANGED");
     }
 
     private UserAccount member(Long id, Long companyId, int status) {
