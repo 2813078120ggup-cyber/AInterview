@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.config.DeepSeekProperties;
 import com.tyut.aiinterview.domain.AiGenerationRecord;
+import com.tyut.aiinterview.governance.RecruitmentAiGovernanceService;
 import com.tyut.aiinterview.prompt.PromptCatalog;
 import com.tyut.aiinterview.prompt.PromptTemplateService;
 import com.tyut.aiinterview.settings.AiProviderService;
@@ -18,6 +19,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Component
 public class DeepSeekGateway {
@@ -28,16 +30,25 @@ public class DeepSeekGateway {
     private final PromptTemplateService promptTemplates;
     private final AiGenerationAuditService auditService;
     private final AiProviderService aiProviderService;
+    private final RecruitmentAiGovernanceService governanceService;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
 
     public DeepSeekGateway(DeepSeekProperties properties, ObjectMapper objectMapper,
                            PromptTemplateService promptTemplates, AiGenerationAuditService auditService,
                            AiProviderService aiProviderService) {
+        this(properties, objectMapper, promptTemplates, auditService, aiProviderService, null);
+    }
+
+    @Autowired
+    public DeepSeekGateway(DeepSeekProperties properties, ObjectMapper objectMapper,
+                           PromptTemplateService promptTemplates, AiGenerationAuditService auditService,
+                           AiProviderService aiProviderService, RecruitmentAiGovernanceService governanceService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.promptTemplates = promptTemplates;
         this.auditService = auditService;
         this.aiProviderService = aiProviderService;
+        this.governanceService = governanceService;
     }
 
     public String followUp(String originalQuestion, String answer) {
@@ -108,6 +119,12 @@ public class DeepSeekGateway {
                 """;
         return executeText(inlinePrompt("coach.chat.inline", instruction, conversation),
                 AiGenerationContext.standalone("COACH_CHAT"), null, 90).content();
+    }
+
+    public GovernanceTarget currentGovernanceTarget(String promptCode) {
+        ResolvedProvider provider = resolveProvider();
+        return new GovernanceTarget(provider.code(), provider.model(), promptTemplates.activeVersionNo(promptCode),
+                provider.configured());
     }
 
     public JsonNode evaluateAnswer(String question, String referenceAnswer, String candidateAnswer) {
@@ -192,18 +209,35 @@ public class DeepSeekGateway {
     private Generated<String> executeText(PromptTemplateService.RenderedPrompt prompt,
                                           AiGenerationContext context, Integer maxTokens, int timeoutSeconds) {
         ResolvedProvider provider = resolveProvider();
-        AiGenerationRecord audit = auditService.start(context, prompt.code(), prompt.version(), provider.code(),
-                provider.model(), prompt.systemPrompt().length() + prompt.userPrompt().length());
+        RecruitmentAiGovernanceService.Permit permit = governanceService == null
+                ? RecruitmentAiGovernanceService.Permit.ungoverned()
+                : governanceService.authorize(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length(), maxTokens);
+        AiGenerationRecord audit = governanceService == null
+                ? auditService.start(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length())
+                : auditService.start(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length(), permit);
         Integer httpStatus = null;
         try {
             RawCompletion completion = ask(provider, prompt.systemPrompt(), prompt.userPrompt(), false,
                     maxTokens, timeoutSeconds);
             httpStatus = completion.httpStatus();
-            auditService.success(audit, completion.content().length(), completion.promptTokens(),
-                    completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
+            RecruitmentAiGovernanceService.Settlement settlement = governanceService == null
+                    ? RecruitmentAiGovernanceService.Settlement.none()
+                    : governanceService.settle(permit, audit.getRequestId(), completion.promptTokens(),
+                            completion.completionTokens(), completion.totalTokens());
+            if (governanceService == null) {
+                auditService.success(audit, completion.content().length(), completion.promptTokens(),
+                        completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
+            } else {
+                auditService.success(audit, completion.content().length(), completion.promptTokens(),
+                        completion.completionTokens(), completion.totalTokens(), completion.httpStatus(), settlement.actualCostUsd());
+            }
             return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), completion.content(),
                     provider.code(), provider.model());
         } catch (RuntimeException exception) {
+            if (governanceService != null) governanceService.release(permit, audit.getRequestId());
             auditService.failure(audit, exception, status(exception, httpStatus));
             throw exception;
         }
@@ -212,8 +246,15 @@ public class DeepSeekGateway {
     private Generated<JsonNode> executeJson(PromptTemplateService.RenderedPrompt prompt,
                                             AiGenerationContext context, Integer maxTokens, int timeoutSeconds) {
         ResolvedProvider provider = resolveProvider();
-        AiGenerationRecord audit = auditService.start(context, prompt.code(), prompt.version(), provider.code(),
-                provider.model(), prompt.systemPrompt().length() + prompt.userPrompt().length());
+        RecruitmentAiGovernanceService.Permit permit = governanceService == null
+                ? RecruitmentAiGovernanceService.Permit.ungoverned()
+                : governanceService.authorize(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length(), maxTokens);
+        AiGenerationRecord audit = governanceService == null
+                ? auditService.start(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length())
+                : auditService.start(context, prompt.code(), prompt.version(), provider.code(), provider.model(),
+                        prompt.systemPrompt().length() + prompt.userPrompt().length(), permit);
         Integer httpStatus = null;
         try {
             RawCompletion completion = ask(provider, prompt.systemPrompt(), prompt.userPrompt(), true,
@@ -223,15 +264,26 @@ public class DeepSeekGateway {
                     .replaceFirst("\\s*```$", "");
             JsonNode result = objectMapper.readTree(normalized);
             if (!result.isObject()) throw new IllegalStateException("DeepSeek 返回的评测结果不是 JSON 对象");
-            auditService.success(audit, completion.content().length(), completion.promptTokens(),
-                    completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
+            RecruitmentAiGovernanceService.Settlement settlement = governanceService == null
+                    ? RecruitmentAiGovernanceService.Settlement.none()
+                    : governanceService.settle(permit, audit.getRequestId(), completion.promptTokens(),
+                            completion.completionTokens(), completion.totalTokens());
+            if (governanceService == null) {
+                auditService.success(audit, completion.content().length(), completion.promptTokens(),
+                        completion.completionTokens(), completion.totalTokens(), completion.httpStatus());
+            } else {
+                auditService.success(audit, completion.content().length(), completion.promptTokens(),
+                        completion.completionTokens(), completion.totalTokens(), completion.httpStatus(), settlement.actualCostUsd());
+            }
             return new Generated<>(audit.getRequestId(), prompt.code(), prompt.version(), result,
                     provider.code(), provider.model());
         } catch (IOException exception) {
             IllegalStateException wrapped = new IllegalStateException("DeepSeek 返回的评测结果不是合法 JSON", exception);
+            if (governanceService != null) governanceService.release(permit, audit.getRequestId());
             auditService.failure(audit, wrapped, httpStatus);
             throw wrapped;
         } catch (RuntimeException exception) {
+            if (governanceService != null) governanceService.release(permit, audit.getRequestId());
             auditService.failure(audit, exception, status(exception, httpStatus));
             throw exception;
         }
@@ -323,6 +375,9 @@ public class DeepSeekGateway {
         public Generated(String requestId, String promptCode, int promptVersion, T content) {
             this(requestId, promptCode, promptVersion, content, null, null);
         }
+    }
+
+    public record GovernanceTarget(String provider, String model, int promptVersion, boolean configured) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

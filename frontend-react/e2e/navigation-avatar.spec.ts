@@ -22,9 +22,14 @@ async function mockLogin(page: Page, user: MockUser) {
     status: 503,
     json: { code: 50300, message: '页面数据测试桩未启用' },
   }))
-  await page.route('**/api/v1/auth/login', route => route.fulfill({
-    json: { data: { token: 'access-e2e', refreshToken: 'refresh-e2e', user } },
-  }))
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { data: user } }))
+  await page.route('**/api/v1/auth/captcha/challenge', route => route.fulfill({ json: { data: { challengeId: 'captcha-e2e', imageDataUrl: cachedAvatar, expiresInSeconds: 120 } } }))
+  await page.route('**/api/v1/auth/login', route => {
+    const body = route.request().postDataJSON() as { username: string; password: string; captchaChallengeId?: string; captchaCode?: string }
+    expect(body.captchaChallengeId).toBe('captcha-e2e')
+    expect(body.captchaCode).toBe('ABCD')
+    return route.fulfill({ json: { data: { token: 'access-e2e', refreshToken: 'refresh-e2e', user } } })
+  })
   await page.route('**/api/v1/account/profile', route => route.fulfill({
     json: { data: { realName: user.realName, avatarAvailable: Boolean(user.avatarAvailable) } },
   }))
@@ -35,12 +40,15 @@ async function mockLogin(page: Page, user: MockUser) {
 }
 
 async function login(page: Page, username: string) {
-  await page.getByLabel('用户名').fill(username)
-  await page.getByPlaceholder('请输入密码').fill('Password123')
-  await page.getByRole('button', { name: '登录工作空间' }).click()
+  const identifier = username.includes('@') ? username : `${username}@e2e.test`
+  await page.getByLabel('用户名 / 手机号 / 邮箱').fill(identifier)
+  await page.getByPlaceholder('密码').fill('Password123')
+  await page.getByPlaceholder('图形验证码').fill('ABCD')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
 }
 
 test('features platform entry and job entry preserve different destinations', async ({ page }) => {
+  await mockLogin(page, { id: '11', username: 'candidate_e2e', realName: '候选人', roles: ['CANDIDATE'] })
   await page.goto('/features')
   await page.getByRole('button', { name: '进入平台' }).first().click()
   await expect(page).toHaveURL(/\/login$/)
@@ -49,8 +57,7 @@ test('features platform entry and job entry preserve different destinations', as
   await page.getByRole('button', { name: '查看招聘岗位' }).click()
   await expect(page).toHaveURL(/\/login\?next=%2Fjobs$/)
 
-  await mockLogin(page, { id: '11', username: 'candidate_e2e', realName: '候选人', roles: ['CANDIDATE'] })
-  await login(page, 'candidate_e2e')
+  await login(page, 'candidate_e2e@example.test')
   await expect(page).toHaveURL(/\/jobs$/)
 })
 
@@ -85,6 +92,7 @@ test('cached avatar is visible on the first frame after reload', async ({ contex
     localStorage.setItem(`ai-interview-avatar:v1:${user.id}`, cachedAvatar)
   }, { user, cachedAvatar })
   await page.route('**/api/**', route => route.fulfill({ status: 503, json: { code: 50300, message: '测试桩未启用' } }))
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { data: user } }))
   await page.route('**/api/v1/account/profile', async route => {
     await new Promise(resolve => setTimeout(resolve, 500))
     await route.fulfill({ json: { data: { realName: user.realName, avatarAvailable: true } } })

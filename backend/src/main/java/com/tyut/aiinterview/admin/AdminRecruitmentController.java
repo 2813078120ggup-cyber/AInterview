@@ -18,9 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminRecruitmentController {
     private final AdminRecruitmentService service;
+    private final AdminRecruitmentRequisitionService requisitionService;
 
-    public AdminRecruitmentController(AdminRecruitmentService service) {
+    public AdminRecruitmentController(AdminRecruitmentService service,
+                                      AdminRecruitmentRequisitionService requisitionService) {
         this.service = service;
+        this.requisitionService = requisitionService;
     }
 
     @GetMapping("/applications")
@@ -42,6 +45,41 @@ public class AdminRecruitmentController {
     public ApiResponse<AdminRecruitmentDtos.TaskView> retry(@PathVariable Long taskId,
                                                              @Valid @RequestBody(required = false) RetryRequest request) {
         return ApiResponse.ok(service.retry(taskId, request == null ? null : request.confirm()));
+    }
+
+    @GetMapping("/requisitions")
+    public ApiResponse<PageResult<AdminRecruitmentDtos.RequisitionView>> requisitions(
+            AdminRecruitmentDtos.RequisitionQuery query) {
+        return ApiResponse.ok(requisitionService.page(query));
+    }
+
+    @GetMapping("/requisitions/{id}")
+    public ApiResponse<AdminRecruitmentDtos.RequisitionDetail> requisition(@PathVariable Long id) {
+        return ApiResponse.ok(requisitionService.detail(id));
+    }
+
+    @PostMapping("/requisitions/{id}/approve")
+    public ApiResponse<AdminRecruitmentDtos.RequisitionDetail> approveRequisition(
+            @PathVariable Long id, @Valid @RequestBody AdminRecruitmentDtos.ApprovalRequest request) {
+        return ApiResponse.ok(requisitionService.approve(id, request));
+    }
+
+    @PostMapping("/requisitions/{id}/reject")
+    public ApiResponse<AdminRecruitmentDtos.RequisitionDetail> rejectRequisition(
+            @PathVariable Long id, @Valid @RequestBody AdminRecruitmentDtos.DecisionRequest request) {
+        return ApiResponse.ok(requisitionService.reject(id, request));
+    }
+
+    @PostMapping("/requisitions/{id}/freeze")
+    public ApiResponse<AdminRecruitmentDtos.RequisitionDetail> freezeRequisition(
+            @PathVariable Long id, @Valid @RequestBody AdminRecruitmentDtos.DecisionRequest request) {
+        return ApiResponse.ok(requisitionService.freeze(id, request));
+    }
+
+    @PostMapping("/requisitions/{id}/unfreeze")
+    public ApiResponse<AdminRecruitmentDtos.RequisitionDetail> unfreezeRequisition(
+            @PathVariable Long id, @Valid @RequestBody AdminRecruitmentDtos.DecisionRequest request) {
+        return ApiResponse.ok(requisitionService.unfreeze(id, request));
     }
 
     public record RetryRequest(@NotNull Boolean confirm) {}

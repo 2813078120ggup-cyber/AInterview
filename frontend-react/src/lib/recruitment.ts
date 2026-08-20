@@ -29,6 +29,8 @@ export type RecruitmentJob = {
   recruitmentStatus: 'DRAFT' | 'PUBLISHED' | 'CLOSED'
   publishedAt?: string
   expiresAt?: string
+  approvalStatus: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'
+  frozen: boolean
   applied: boolean
   updatedAt: string
 }
@@ -43,6 +45,43 @@ export type PositionStatistics = {
 export type PositionDetail = {
   job: RecruitmentJob
   statistics: PositionStatistics
+  requisition: RecruitmentRequisition
+  approvalHistory: RequisitionEvent[]
+}
+
+export type RecruitmentRequisition = {
+  id: string
+  requisitionNo: string
+  headcountCode: string
+  requestedHeadcount: number
+  approvedHeadcount?: number
+  costCenterCode: string
+  costCenterName?: string
+  budgetAmount: number
+  budgetCurrency: string
+  businessJustification: string
+  approvalStatus: RecruitmentJob['approvalStatus']
+  submittedBy?: string
+  submittedAt?: string
+  reviewedBy?: string
+  reviewedAt?: string
+  reviewNote?: string
+  frozen: boolean
+  frozenBy?: string
+  frozenAt?: string
+  freezeReason?: string
+  updatedAt?: string
+}
+
+export type RequisitionEvent = {
+  id: string
+  eventType: string
+  fromStatus?: string
+  toStatus?: string
+  operatorId?: string
+  operatorName: string
+  note?: string
+  createdAt: string
 }
 
 export type Resume = {
@@ -161,6 +200,12 @@ export type MatchEvaluation = {
   modelName?: string
   promptVersion?: number
   recommendation?: string
+  humanReviewRequired: boolean
+  humanReviewStatus?: 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'OVERRIDDEN' | 'DISMISSED'
+  humanReviewDecision?: 'APPROVE' | 'OVERRIDE' | 'DISMISS'
+  humanReviewNote?: string
+  humanReviewedBy?: string
+  humanReviewedAt?: string
   createdAt?: string
   finishedAt?: string
 }
@@ -235,6 +280,12 @@ export type CompanyReportDetail = {
   canRetry: boolean
   questionReviews: CompanyQuestionReview[]
   recording?: CompanyRecordingView
+  humanReviewRequired: boolean
+  humanReviewStatus?: 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'OVERRIDDEN' | 'DISMISSED'
+  humanReviewDecision?: string
+  humanReviewNote?: string
+  humanReviewedBy?: string
+  humanReviewedAt?: string
 }
 
 export type CompanyQuestionReview = {
@@ -394,6 +445,13 @@ export const positionStatusMeta = {
   DRAFT: { label: '草稿', tone: 'default' as const },
   PUBLISHED: { label: '招聘中', tone: 'success' as const },
   CLOSED: { label: '已关闭', tone: 'danger' as const },
+}
+
+export const approvalStatusMeta = {
+  DRAFT: { label: '待提交审批', tone: 'default' as const },
+  PENDING_APPROVAL: { label: '等待超级管理员审核', tone: 'warning' as const },
+  APPROVED: { label: '已批准', tone: 'success' as const },
+  REJECTED: { label: '已驳回', tone: 'danger' as const },
 }
 
 export function salaryLabel(job: Pick<RecruitmentJob, 'salaryMin' | 'salaryMax'>) {

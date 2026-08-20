@@ -6,6 +6,7 @@ import com.tyut.aiinterview.domain.Interview;
 import com.tyut.aiinterview.domain.InterviewAnswer;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -79,11 +80,13 @@ public class InterviewController {
     }
 
     @PostMapping("/{id}/start")
+    @PreAuthorize("hasRole('CANDIDATE')")
     public ApiResponse<Interview> start(@PathVariable Long id) {
         return ApiResponse.ok(service.start(id));
     }
 
     @PostMapping("/{id}/end")
+    @PreAuthorize("hasRole('CANDIDATE')")
     public ApiResponse<InterviewDtos.EndResponse> end(@PathVariable Long id) {
         return ApiResponse.ok(service.end(id));
     }
@@ -104,12 +107,14 @@ public class InterviewController {
     }
 
     @PutMapping("/{id}/progress")
+    @PreAuthorize("hasRole('CANDIDATE')")
     public ApiResponse<InterviewDtos.ProgressView> updateProgress(@PathVariable Long id,
                                                                   @Valid @RequestBody InterviewDtos.ProgressRequest request) {
         return ApiResponse.ok(service.updateProgress(id, request));
     }
 
     @PutMapping("/{id}/questions/{interviewQuestionId}/answer")
+    @PreAuthorize("hasRole('CANDIDATE')")
     public ApiResponse<InterviewAnswer> answer(@PathVariable Long id, @PathVariable Long interviewQuestionId,
                                                 @Valid @RequestBody InterviewDtos.AnswerRequest request) {
         return ApiResponse.ok(service.submitAnswer(id, interviewQuestionId, request));

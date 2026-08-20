@@ -254,6 +254,37 @@ export type AdminRecruitmentDetail = {
   statusHistory: { id: string; fromStatus?: string | null; toStatus: string; operatorId?: string | null; createdAt: string }[]
 }
 
+export type AdminRecruitmentRequisition = {
+  id: string
+  requisitionNo: string
+  company: { id: string; code?: string | null; name: string; secondary?: string | null }
+  position: { id: string; code?: string | null; name: string; secondary?: string | null }
+  headcountCode: string
+  requestedHeadcount: number
+  approvedHeadcount?: number | null
+  costCenterCode: string
+  costCenterName?: string | null
+  budgetAmount: number
+  budgetCurrency: string
+  businessJustification: string
+  approvalStatus: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'
+  submittedBy?: string | null
+  submittedAt?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  reviewNote?: string | null
+  frozen: boolean
+  frozenBy?: string | null
+  frozenAt?: string | null
+  freezeReason?: string | null
+  updatedAt?: string | null
+}
+
+export type AdminRecruitmentRequisitionDetail = {
+  requisition: AdminRecruitmentRequisition
+  history: { id: string; eventType: string; fromStatus?: string | null; toStatus?: string | null; operatorId?: string | null; operatorName: string; note?: string | null; createdAt: string }[]
+}
+
 export type AdminAiOperationsProvider = {
   id: string
   name: string

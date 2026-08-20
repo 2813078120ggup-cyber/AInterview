@@ -3,6 +3,7 @@ package com.tyut.aiinterview.auth;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +25,7 @@ class PasswordResetServiceTest {
     @Mock private UserMapper userMapper;
     @Mock private CompanyMapper companyMapper;
     @Mock private VerificationCodeService codeService;
+    @Mock private PasswordResetTicketService ticketService;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private RefreshTokenService refreshTokenService;
     @Mock private SecurityNotificationService notificationService;
@@ -33,7 +35,7 @@ class PasswordResetServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        service = new PasswordResetService(userMapper, companyMapper, codeService, passwordEncoder,
+        service = new PasswordResetService(userMapper, companyMapper, codeService, ticketService, passwordEncoder,
                 refreshTokenService, notificationService, auditService);
     }
 
@@ -88,6 +90,55 @@ class PasswordResetServiceTest {
         assertEquals(existing.cooldownSeconds(), missing.cooldownSeconds());
         assertEquals(existing.expiresInSeconds(), missing.expiresInSeconds());
         assertEquals(existing.message(), missing.message());
+    }
+
+    @Test
+    void verifiedCodeIssuesShortLivedResetTicket() {
+        UserAccount user = user();
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(ticketService.issue(11L, 4))
+                .thenReturn(new PasswordResetTicketService.IssuedTicket("reset-ticket", 600));
+
+        AuthDtos.PasswordResetVerifyResponse response = service.verifyCode(
+                new AuthDtos.PasswordResetVerifyRequest("sms", "13800000000", "123456"));
+
+        assertEquals("reset-ticket", response.resetToken());
+        assertEquals(600, response.expiresInSeconds());
+        verify(codeService).verifyPasswordResetCode(11L, "sms", "13800000000", "123456");
+        verify(ticketService).issue(11L, 4);
+    }
+
+    @Test
+    void unknownTargetCannotObtainResetTicket() {
+        when(userMapper.selectOne(any())).thenReturn(null);
+        org.mockito.Mockito.doThrow(BusinessException.badRequest("验证码错误或已过期"))
+                .when(codeService).verifyPasswordResetCode(null, "email", "missing@example.com", "123456");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.verifyCode(
+                new AuthDtos.PasswordResetVerifyRequest("email", "missing@example.com", "123456")));
+
+        assertEquals("验证码错误或已过期", exception.getMessage());
+        verify(ticketService, never()).issue(any(), anyInt());
+    }
+
+    @Test
+    void oneTimeTicketCompletesResetAndRevokesSessions() {
+        UserAccount user = user();
+        UserAccount latest = user();
+        latest.setSecurityVersion(5);
+        when(ticketService.consume("reset-ticket"))
+                .thenReturn(new PasswordResetTicketService.VerifiedTicket(11L, 4));
+        when(userMapper.selectById(11L)).thenReturn(user).thenReturn(latest);
+        when(passwordEncoder.matches("Next12345!", "current-hash")).thenReturn(false);
+        when(passwordEncoder.encode("Next12345!")).thenReturn("new-hash");
+        when(userMapper.updatePasswordAndSecurityVersion(11L, "new-hash", 4)).thenReturn(1);
+
+        AuthDtos.PasswordResetResponse response = service.complete(
+                new AuthDtos.PasswordResetCompleteRequest("reset-ticket", "Next12345!"));
+
+        assertEquals("密码已重置，全部设备会话已失效，请重新登录", response.sessionBehavior());
+        verify(refreshTokenService).revokeAllSessions(11L, "PASSWORD_RESET");
+        verify(notificationService).notifyPasswordChanged(latest);
     }
 
     @Test

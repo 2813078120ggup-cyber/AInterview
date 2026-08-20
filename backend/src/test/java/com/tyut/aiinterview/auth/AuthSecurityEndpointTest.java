@@ -52,6 +52,15 @@ class AuthSecurityEndpointTest {
     }
 
     @Test
+    void imageCaptchaChallengeIsPublicButValidated() {
+        ResponseEntity<String> challengeResponse = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/api/v1/auth/captcha/challenge",
+                new AuthDtos.CaptchaChallengeRequest("UNKNOWN"), String.class);
+
+        assertThat(challengeResponse.getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
     void securityEventsRequireAuthenticationAndCannotBeDeleted() {
         ResponseEntity<String> getResponse = restTemplate.getForEntity(
                 "http://127.0.0.1:" + port + "/api/v1/account/security-events", String.class);

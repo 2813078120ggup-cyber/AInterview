@@ -21,6 +21,8 @@ import com.tyut.aiinterview.domain.JobMatchEvaluation;
 import com.tyut.aiinterview.domain.JobPosition;
 import com.tyut.aiinterview.domain.OfflineInterview;
 import com.tyut.aiinterview.domain.QuestionBank;
+import com.tyut.aiinterview.domain.RecruitmentRequisition;
+import com.tyut.aiinterview.domain.RecruitmentRequisitionEvent;
 import com.tyut.aiinterview.domain.UserAccount;
 import com.tyut.aiinterview.interview.InterviewDtos;
 import com.tyut.aiinterview.interview.InterviewService;
@@ -35,6 +37,8 @@ import com.tyut.aiinterview.mapper.JobMatchEvaluationMapper;
 import com.tyut.aiinterview.mapper.JobPositionMapper;
 import com.tyut.aiinterview.mapper.OfflineInterviewMapper;
 import com.tyut.aiinterview.mapper.QuestionBankMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionEventMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.notification.SiteNotificationService;
 import com.tyut.aiinterview.security.CurrentUser;
@@ -77,6 +81,8 @@ public class RecruitmentService {
     private final CompanyAccessService companyAccess;
     private final ApplicationStatusService statusService;
     private final RecruitmentAuditService auditService;
+    private final RecruitmentRequisitionMapper requisitionMapper;
+    private final RecruitmentRequisitionEventMapper requisitionEventMapper;
     private InterviewStatusHistoryMapper interviewStatusHistoryMapper;
 
     public RecruitmentService(JobPositionMapper positionMapper, CompanyMapper companyMapper,
@@ -87,7 +93,9 @@ public class RecruitmentService {
                                InterviewService interviewService,
                                SiteNotificationService notificationService, CurrentUser currentUser, ObjectMapper objectMapper,
                                AiTaskService taskService, CompanyAccessService companyAccess,
-                               ApplicationStatusService statusService, RecruitmentAuditService auditService) {
+                               ApplicationStatusService statusService, RecruitmentAuditService auditService,
+                               RecruitmentRequisitionMapper requisitionMapper,
+                               RecruitmentRequisitionEventMapper requisitionEventMapper) {
         this.positionMapper = positionMapper;
         this.companyMapper = companyMapper;
         this.applicationMapper = applicationMapper;
@@ -106,6 +114,8 @@ public class RecruitmentService {
         this.companyAccess = companyAccess;
         this.statusService = statusService;
         this.auditService = auditService;
+        this.requisitionMapper = requisitionMapper;
+        this.requisitionEventMapper = requisitionEventMapper;
     }
 
     @Autowired
@@ -122,6 +132,8 @@ public class RecruitmentService {
                 .eq(JobPosition::getStatus, 1)
                 .isNotNull(JobPosition::getCompanyId)
                 .eq(JobPosition::getRecruitmentStatus, "PUBLISHED")
+                .exists("SELECT 1 FROM recruitment_requisition rr WHERE rr.position_id = job_position.id "
+                        + "AND rr.approval_status = 'APPROVED' AND rr.frozen = 0")
                 .exists("SELECT 1 FROM company c WHERE c.id = job_position.company_id AND c.status = 1 AND c.deleted_at IS NULL")
                 .le(JobPosition::getPublishedAt, now)
                 .and(item -> item.isNull(JobPosition::getExpiresAt).or().gt(JobPosition::getExpiresAt, now))
@@ -233,7 +245,7 @@ public class RecruitmentService {
         if (application == null || !currentUser.id().equals(application.getCandidateId())) {
             throw BusinessException.notFound("申请不存在");
         }
-        return matchView(application);
+        return matchView(application, false);
     }
 
     public PageResult<RecruitmentDtos.MatchEvaluationView> candidateMatchHistory(Long id, Long pageNo, Long pageSize) {
@@ -242,13 +254,14 @@ public class RecruitmentService {
         if (application == null || !currentUser.id().equals(application.getCandidateId())) {
             throw BusinessException.notFound("申请不存在");
         }
-        return matchHistory(application, pageNo, pageSize);
+        return matchHistory(application, pageNo, pageSize, false);
     }
 
     public RecruitmentDtos.Dashboard companyDashboard() {
         Long companyId = companyAccess.requirePermission("analytics:read");
         long published = positionMapper.selectCount(new LambdaQueryWrapper<JobPosition>()
-                .eq(JobPosition::getCompanyId, companyId).eq(JobPosition::getRecruitmentStatus, "PUBLISHED"));
+                .eq(JobPosition::getCompanyId, companyId).eq(JobPosition::getRecruitmentStatus, "PUBLISHED")
+                .exists("SELECT 1 FROM recruitment_requisition rr WHERE rr.position_id = job_position.id AND rr.frozen = 0"));
         long drafts = positionMapper.selectCount(new LambdaQueryWrapper<JobPosition>()
                 .eq(JobPosition::getCompanyId, companyId).eq(JobPosition::getRecruitmentStatus, "DRAFT"));
         List<JobApplication> applications = applicationMapper.selectList(new LambdaQueryWrapper<JobApplication>()
@@ -294,6 +307,8 @@ public class RecruitmentService {
         position.setRecruitmentStatus("DRAFT");
         applyPositionFields(position, request);
         positionMapper.insert(position);
+        RecruitmentRequisition requisition = createRequisitionDraft(position, request.requisition());
+        recordRequisitionEvent(requisition, "CREATED", null, "DRAFT", "HR 创建岗位及招聘需求草稿");
         auditService.recordPositionOperation("POSITION_CREATED", companyId, position.getId(), position.getPositionCode(), "创建岗位草稿");
         return toJobView(position, false);
     }
@@ -303,6 +318,8 @@ public class RecruitmentService {
         companyAccess.requirePermission("recruitment:position:write");
         validatePositionRequest(request);
         JobPosition position = companyAccess.requirePosition(id);
+        RecruitmentRequisition requisition = requireRequisition(id);
+        assertRequisitionEditable(requisition);
         if (StringUtils.hasText(request.recruitmentStatus())
                 && !normalizeEnum(request.recruitmentStatus()).equals(normalizeEnum(position.getRecruitmentStatus()))) {
             throw BusinessException.badRequest("招聘状态必须通过发布或关闭动作修改");
@@ -312,7 +329,10 @@ public class RecruitmentService {
             throw BusinessException.conflict("岗位编码已存在");
         }
         applyPositionFields(position, request);
+        validateHeadcountAvailable(requisition.getCompanyId(), request.requisition().headcountCode(), requisition.getId());
+        applyRequisitionFields(requisition, request.requisition());
         positionMapper.updateById(position);
+        requisitionMapper.updateById(requisition);
         auditService.recordPositionOperation("POSITION_UPDATED", position.getCompanyId(), position.getId(), position.getPositionCode(), "更新岗位内容");
         return toJobView(position, false);
     }
@@ -320,7 +340,9 @@ public class RecruitmentService {
     public RecruitmentDtos.PositionDetail companyPositionDetail(Long id) {
         Long companyId = companyAccess.requirePermission("recruitment:position:read");
         JobPosition position = companyAccess.requirePosition(id);
-        return new RecruitmentDtos.PositionDetail(toJobView(position, false), positionStatistics(companyId, position.getId()));
+        RecruitmentRequisition requisition = requireRequisition(position.getId());
+        return new RecruitmentDtos.PositionDetail(toJobView(position, false), positionStatistics(companyId, position.getId()),
+                toRequisitionView(requisition), requisitionHistory(requisition.getId()));
     }
 
     public RecruitmentDtos.PositionStatistics companyPositionStatistics(Long id) {
@@ -353,6 +375,9 @@ public class RecruitmentService {
         clone.setPublishedAt(null);
         clone.setExpiresAt(null);
         positionMapper.insert(clone);
+        RecruitmentRequisition sourceRequisition = requireRequisition(source.getId());
+        RecruitmentRequisition cloneRequisition = cloneRequisitionDraft(sourceRequisition, clone);
+        recordRequisitionEvent(cloneRequisition, "CREATED", null, "DRAFT", "复制岗位后生成新的招聘需求草稿");
         auditService.recordPositionOperation("POSITION_CLONED", companyId, clone.getId(), clone.getPositionCode(),
                 "复制岗位 sourcePositionId=" + source.getId());
         return toJobView(clone, false);
@@ -366,19 +391,64 @@ public class RecruitmentService {
         String target = normalizeEnum(request.status());
         if (!POSITION_STATUSES.contains(target)) throw BusinessException.badRequest("招聘状态不合法");
         if (current.equals(target)) return toJobView(position, false);
+        if ("PUBLISHED".equals(target)) {
+            throw BusinessException.forbidden("岗位必须提交招聘需求，并由超级管理员批准后自动发布");
+        }
         if (!isAllowedPositionTransition(current, target)) {
             throw BusinessException.badRequest("岗位不能从 " + current + " 直接变更为 " + target);
-        }
-        if ("PUBLISHED".equals(target)) {
-            companyAccess.requirePermission("recruitment:position:publish");
-            validatePublishable(position);
-            position.setPublishedAt(LocalDateTime.now());
         }
         position.setRecruitmentStatus(target);
         positionMapper.updateById(position);
         auditService.recordPositionOperation("POSITION_STATUS_CHANGED", companyId, position.getId(), position.getPositionCode(),
                 current + " -> " + target + (StringUtils.hasText(request.note()) ? "; " + request.note().trim() : ""));
         return toJobView(position, false);
+    }
+
+    @Transactional
+    public RecruitmentDtos.RequisitionView submitPositionForApproval(Long id) {
+        Long companyId = companyAccess.requirePermission("recruitment:position:write");
+        JobPosition position = companyAccess.requirePosition(id);
+        RecruitmentRequisition requisition = requireRequisition(id);
+        if (Integer.valueOf(1).equals(requisition.getFrozen())) {
+            throw BusinessException.conflict("招聘需求已被冻结，无法重新提交");
+        }
+        String current = normalizeEnum(requisition.getApprovalStatus());
+        if (!Set.of("DRAFT", "REJECTED").contains(current)) {
+            throw BusinessException.conflict("仅草稿或已驳回的招聘需求可以提交审批");
+        }
+        validatePositionForPublication(position);
+        validateRequisition(requisition);
+        LocalDateTime now = LocalDateTime.now();
+        int updated = requisitionMapper.update(null, new LambdaUpdateWrapper<RecruitmentRequisition>()
+                .eq(RecruitmentRequisition::getId, requisition.getId())
+                .eq(RecruitmentRequisition::getApprovalStatus, current)
+                .eq(RecruitmentRequisition::getFrozen, 0)
+                .set(RecruitmentRequisition::getApprovalStatus, "PENDING_APPROVAL")
+                .set(RecruitmentRequisition::getSubmittedBy, currentUser.id())
+                .set(RecruitmentRequisition::getSubmittedAt, now)
+                .set(RecruitmentRequisition::getReviewedBy, null)
+                .set(RecruitmentRequisition::getReviewedAt, null)
+                .set(RecruitmentRequisition::getReviewNote, null)
+                .set(RecruitmentRequisition::getApprovedHeadcount, null)
+                .setSql("version = version + 1"));
+        if (updated != 1) throw BusinessException.conflict("招聘需求状态已变化，请刷新后重试");
+        requisition.setApprovalStatus("PENDING_APPROVAL");
+        requisition.setSubmittedBy(currentUser.id());
+        requisition.setSubmittedAt(now);
+        requisition.setReviewedBy(null);
+        requisition.setReviewedAt(null);
+        requisition.setReviewNote(null);
+        requisition.setApprovedHeadcount(null);
+        requisition.setVersion(requisition.getVersion() == null ? 1 : requisition.getVersion() + 1);
+        if (!"DRAFT".equals(normalizeEnum(position.getRecruitmentStatus()))) {
+            position.setRecruitmentStatus("DRAFT");
+            position.setPublishedAt(null);
+            positionMapper.updateById(position);
+        }
+        recordRequisitionEvent(requisition, "SUBMITTED", current, "PENDING_APPROVAL", "HR 提交超级管理员审批");
+        auditService.recordPositionOperation("REQUISITION_SUBMITTED", companyId, position.getId(), position.getPositionCode(),
+                "requisitionNo=" + requisition.getRequisitionNo());
+        return toRequisitionView(requisition);
     }
 
     public PageResult<RecruitmentDtos.ApplicationView> companyApplications(RecruitmentDtos.ApplicationQuery query) {
@@ -437,6 +507,9 @@ public class RecruitmentService {
             throw BusinessException.badRequest("进入线下面试请使用面试邀请接口");
         }
         if (request.interviewId() != null) validateInterviewLink(application, request.interviewId());
+        if (Set.of(ApplicationStatus.REJECTED, ApplicationStatus.HIRED).contains(target)) {
+            requireCompletedMatchReview(application);
+        }
         transition(application, target, request.note(), request.interviewId());
         return toApplicationView(companyAccess.requireApplication(id), true);
     }
@@ -449,18 +522,51 @@ public class RecruitmentService {
 
     public RecruitmentDtos.MatchEvaluationView companyMatch(Long id) {
         companyAccess.requirePermission("application:read");
-        return matchView(companyAccess.requireApplication(id));
+        return matchView(companyAccess.requireApplication(id), true);
     }
 
     public PageResult<RecruitmentDtos.MatchEvaluationView> companyMatchHistory(Long id, Long pageNo, Long pageSize) {
         companyAccess.requirePermission("application:read");
-        return matchHistory(companyAccess.requireApplication(id), pageNo, pageSize);
+        return matchHistory(companyAccess.requireApplication(id), pageNo, pageSize, true);
+    }
+
+    @Transactional
+    public RecruitmentDtos.MatchEvaluationView reviewCompanyMatch(Long id, RecruitmentDtos.MatchReviewRequest request) {
+        companyAccess.requirePermission("application:review");
+        JobApplication application = companyAccess.requireApplication(id);
+        JobMatchEvaluation evaluation = latestMatchEvaluation(application.getId());
+        if (evaluation == null || !"SUCCESS".equals(evaluation.getStatus())) {
+            throw BusinessException.badRequest("岗位匹配结果尚未完成，不能提交人工复核");
+        }
+        String decision = normalizeEnum(request.decision());
+        if (!Set.of("APPROVE", "OVERRIDE", "DISMISS").contains(decision)) {
+            throw BusinessException.badRequest("人工复核决定不合法");
+        }
+        String note = trimToNull(request.note());
+        if (!"APPROVE".equals(decision) && !StringUtils.hasText(note)) {
+            throw BusinessException.badRequest("覆盖或忽略 AI 结论时必须填写人工依据");
+        }
+        evaluation.setHumanReviewRequired(1);
+        evaluation.setHumanReviewStatus(switch (decision) {
+            case "OVERRIDE" -> "OVERRIDDEN";
+            case "DISMISS" -> "DISMISSED";
+            default -> "APPROVED";
+        });
+        evaluation.setHumanReviewDecision(decision);
+        evaluation.setHumanReviewNote(note);
+        evaluation.setHumanReviewedBy(currentUser.id());
+        evaluation.setHumanReviewedAt(LocalDateTime.now());
+        matchEvaluationMapper.updateById(evaluation);
+        auditService.recordApplicationOperation("AI_MATCH_HUMAN_REVIEWED", application.getCompanyId(), application.getId(),
+                "人工复核岗位匹配，决定 " + decision);
+        return toMatchEvaluationView(application, evaluation, true);
     }
 
     @Transactional
     public RecruitmentDtos.ApplicationView createAiInterview(Long id, RecruitmentDtos.AiInterviewRequest request) {
         Long companyId = companyAccess.requirePermission("interview:create");
         JobApplication application = lockCompanyApplication(id, companyId);
+        requireCompletedMatchReview(application);
         if (!Set.of(ApplicationStatus.SUBMITTED.name(), ApplicationStatus.UNDER_REVIEW.name()).contains(application.getStatus())) {
             throw BusinessException.badRequest("当前申请状态不允许安排 AI 面试");
         }
@@ -492,6 +598,7 @@ public class RecruitmentService {
     public RecruitmentDtos.ApplicationView inviteOfflineInterview(Long id, RecruitmentDtos.OfflineInterviewRequest request) {
         Long companyId = companyAccess.requirePermission("interview:create");
         JobApplication application = lockCompanyApplication(id, companyId);
+        requireCompletedMatchReview(application);
         if (application.getInterviewId() != null) {
             throw BusinessException.conflict("该申请已经存在活动面试");
         }
@@ -636,11 +743,14 @@ public class RecruitmentService {
 
     private RecruitmentDtos.JobView toJobView(JobPosition position, boolean applied) {
         Company company = companyAccess.requireActiveCompany(position.getCompanyId());
+        RecruitmentRequisition requisition = findRequisition(position.getId());
         return new RecruitmentDtos.JobView(position.getId(), position.getPositionCode(), toCompanyView(company), position.getName(),
                 position.getDepartment(), position.getSalaryMin(), position.getSalaryMax(), position.getCity(),
                 position.getExperienceRequirement(), position.getEducationRequirement(), position.getJobType(),
                 position.getDescription(), position.getRequirements(), parseStringList(position.getSkillTags()),
-                position.getRecruitmentStatus(), position.getPublishedAt(), position.getExpiresAt(), applied, position.getUpdatedAt());
+                position.getRecruitmentStatus(), position.getPublishedAt(), position.getExpiresAt(),
+                requisition == null ? "DRAFT" : requisition.getApprovalStatus(),
+                requisition != null && Integer.valueOf(1).equals(requisition.getFrozen()), applied, position.getUpdatedAt());
     }
 
     private RecruitmentDtos.ApplicationView toApplicationView(JobApplication application, boolean includeHistory) {
@@ -744,17 +854,14 @@ public class RecruitmentService {
         return allowedTransitions.stream().map(RecruitmentDtos.StatusTransition::label).collect(Collectors.joining(" / "));
     }
 
-    private RecruitmentDtos.MatchEvaluationView matchView(JobApplication application) {
-        JobMatchEvaluation evaluation = matchEvaluationMapper.selectOne(new LambdaQueryWrapper<JobMatchEvaluation>()
-                .eq(JobMatchEvaluation::getApplicationId, application.getId())
-                .orderByDesc(JobMatchEvaluation::getEvaluationVersion).orderByDesc(JobMatchEvaluation::getId)
-                .last("LIMIT 1"));
+    private RecruitmentDtos.MatchEvaluationView matchView(JobApplication application, boolean companyFacing) {
+        JobMatchEvaluation evaluation = latestMatchEvaluation(application.getId());
         if (evaluation == null) throw BusinessException.notFound("岗位匹配结果尚未生成");
-        return toMatchEvaluationView(application, evaluation);
+        return toMatchEvaluationView(application, evaluation, companyFacing);
     }
 
     private PageResult<RecruitmentDtos.MatchEvaluationView> matchHistory(JobApplication application, Long requestedPageNo,
-                                                                           Long requestedPageSize) {
+                                                                           Long requestedPageSize, boolean companyFacing) {
         long currentPageNo = pageNo(requestedPageNo);
         long currentPageSize = Math.min(20, pageSize(requestedPageSize));
         Page<JobMatchEvaluation> result = matchEvaluationMapper.selectPage(new Page<>(currentPageNo, currentPageSize),
@@ -762,12 +869,13 @@ public class RecruitmentService {
                         .eq(JobMatchEvaluation::getApplicationId, application.getId())
                         .orderByDesc(JobMatchEvaluation::getEvaluationVersion)
                         .orderByDesc(JobMatchEvaluation::getId));
-        return PageResult.of(result.getRecords().stream().map(item -> toMatchEvaluationView(application, item)).toList(),
+        return PageResult.of(result.getRecords().stream().map(item -> toMatchEvaluationView(application, item, companyFacing)).toList(),
                 result.getTotal(), currentPageNo, currentPageSize);
     }
 
     private RecruitmentDtos.MatchEvaluationView toMatchEvaluationView(JobApplication application,
-                                                                        JobMatchEvaluation evaluation) {
+                                                                        JobMatchEvaluation evaluation,
+                                                                        boolean companyFacing) {
         JsonNode details;
         try {
             details = objectMapper.readTree(application.getMatchDetails() == null ? "{}" : application.getMatchDetails());
@@ -782,7 +890,28 @@ public class RecruitmentService {
                 parseStringList(evaluation.getEvidence()), evaluation.getConfidence(),
                 evaluation.getProviderName(), evaluation.getModelName(), evaluation.getPromptVersion(),
                 StringUtils.hasText(evaluation.getRecommendation()) ? evaluation.getRecommendation()
-                        : details.path("recommendation").asText("建议人工复核"), evaluation.getCreatedAt(), evaluation.getFinishedAt());
+                        : details.path("recommendation").asText("建议人工复核"),
+                Integer.valueOf(1).equals(evaluation.getHumanReviewRequired()), evaluation.getHumanReviewStatus(),
+                companyFacing ? evaluation.getHumanReviewDecision() : null,
+                companyFacing ? evaluation.getHumanReviewNote() : null,
+                companyFacing ? evaluation.getHumanReviewedBy() : null,
+                evaluation.getHumanReviewedAt(), evaluation.getCreatedAt(), evaluation.getFinishedAt());
+    }
+
+    private JobMatchEvaluation latestMatchEvaluation(Long applicationId) {
+        return matchEvaluationMapper.selectOne(new LambdaQueryWrapper<JobMatchEvaluation>()
+                .eq(JobMatchEvaluation::getApplicationId, applicationId)
+                .orderByDesc(JobMatchEvaluation::getEvaluationVersion).orderByDesc(JobMatchEvaluation::getId)
+                .last("LIMIT 1"));
+    }
+
+    private void requireCompletedMatchReview(JobApplication application) {
+        JobMatchEvaluation evaluation = latestMatchEvaluation(application.getId());
+        if (evaluation == null || !"SUCCESS".equals(evaluation.getStatus())
+                || !Integer.valueOf(1).equals(evaluation.getHumanReviewRequired())) return;
+        if (evaluation.getHumanReviewStatus() == null || "PENDING".equals(evaluation.getHumanReviewStatus())) {
+            throw BusinessException.badRequest("请先完成人工复核，再推进该候选人的招聘流程");
+        }
     }
 
     private RecruitmentDtos.CompanyView toCompanyView(Company company) {
@@ -824,6 +953,145 @@ public class RecruitmentService {
         target.setExpiresAt(source.expiresAt());
     }
 
+    private RecruitmentRequisition createRequisitionDraft(JobPosition position,
+                                                            RecruitmentDtos.RequisitionRequest source) {
+        RecruitmentRequisition requisition = new RecruitmentRequisition();
+        requisition.setRequisitionNo(nextRequisitionNo());
+        requisition.setCompanyId(position.getCompanyId());
+        requisition.setPositionId(position.getId());
+        requisition.setApprovalStatus("DRAFT");
+        requisition.setFrozen(0);
+        requisition.setVersion(0);
+        validateHeadcountAvailable(position.getCompanyId(), source.headcountCode(), null);
+        applyRequisitionFields(requisition, source);
+        requisitionMapper.insert(requisition);
+        return requisition;
+    }
+
+    private RecruitmentRequisition cloneRequisitionDraft(RecruitmentRequisition source, JobPosition clone) {
+        RecruitmentRequisition requisition = new RecruitmentRequisition();
+        requisition.setRequisitionNo(nextRequisitionNo());
+        requisition.setCompanyId(clone.getCompanyId());
+        requisition.setPositionId(clone.getId());
+        String suffix = "-COPY-" + clone.getId();
+        requisition.setHeadcountCode(trimToLength(source.getHeadcountCode(), 64 - suffix.length()) + suffix);
+        requisition.setRequestedHeadcount(source.getRequestedHeadcount());
+        requisition.setCostCenterCode(source.getCostCenterCode());
+        requisition.setCostCenterName(source.getCostCenterName());
+        requisition.setBudgetAmount(source.getBudgetAmount());
+        requisition.setBudgetCurrency(source.getBudgetCurrency());
+        requisition.setBusinessJustification(source.getBusinessJustification());
+        requisition.setApprovalStatus("DRAFT");
+        requisition.setFrozen(0);
+        requisition.setVersion(0);
+        requisitionMapper.insert(requisition);
+        return requisition;
+    }
+
+    private void applyRequisitionFields(RecruitmentRequisition target, RecruitmentDtos.RequisitionRequest source) {
+        target.setHeadcountCode(source.headcountCode().trim());
+        target.setRequestedHeadcount(source.requestedHeadcount());
+        target.setCostCenterCode(source.costCenterCode().trim());
+        target.setCostCenterName(trimToNull(source.costCenterName()));
+        target.setBudgetAmount(source.budgetAmount());
+        target.setBudgetCurrency(source.budgetCurrency().trim().toUpperCase(Locale.ROOT));
+        target.setBusinessJustification(source.businessJustification().trim());
+    }
+
+    private void assertRequisitionEditable(RecruitmentRequisition requisition) {
+        if (Integer.valueOf(1).equals(requisition.getFrozen())) {
+            throw BusinessException.conflict("招聘需求已被冻结，不能修改岗位或预算信息");
+        }
+        if (!Set.of("DRAFT", "REJECTED").contains(normalizeEnum(requisition.getApprovalStatus()))) {
+            throw BusinessException.conflict("招聘需求审批中或已批准，不能修改；如需调整请先关闭岗位并重新提交审批");
+        }
+    }
+
+    private void validateRequisition(RecruitmentRequisition requisition) {
+        if (!StringUtils.hasText(requisition.getHeadcountCode())) throw BusinessException.badRequest("请填写占用的编制编码");
+        if (requisition.getRequestedHeadcount() == null || requisition.getRequestedHeadcount() < 1
+                || requisition.getRequestedHeadcount() > 1000) {
+            throw BusinessException.badRequest("招聘人数必须在 1 到 1000 之间");
+        }
+        if (!StringUtils.hasText(requisition.getCostCenterCode())) throw BusinessException.badRequest("请填写成本中心编码");
+        if (requisition.getBudgetAmount() == null || requisition.getBudgetAmount().compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.badRequest("招聘预算不能小于 0");
+        }
+        if (!StringUtils.hasText(requisition.getBudgetCurrency()) || requisition.getBudgetCurrency().length() != 3) {
+            throw BusinessException.badRequest("预算币种必须为三位代码");
+        }
+        if (!StringUtils.hasText(requisition.getBusinessJustification())) throw BusinessException.badRequest("请填写招聘理由");
+    }
+
+    private void validateHeadcountAvailable(Long companyId, String headcountCode, Long currentRequisitionId) {
+        if (!StringUtils.hasText(headcountCode)) throw BusinessException.badRequest("请填写占用的编制编码");
+        LambdaQueryWrapper<RecruitmentRequisition> wrapper = new LambdaQueryWrapper<RecruitmentRequisition>()
+                .eq(RecruitmentRequisition::getCompanyId, companyId)
+                .eq(RecruitmentRequisition::getHeadcountCode, headcountCode.trim());
+        if (currentRequisitionId != null) wrapper.ne(RecruitmentRequisition::getId, currentRequisitionId);
+        if (requisitionMapper.exists(wrapper)) {
+            throw BusinessException.conflict("该编制编码已被其他招聘需求占用");
+        }
+    }
+
+    private RecruitmentRequisition findRequisition(Long positionId) {
+        if (positionId == null) return null;
+        return requisitionMapper.selectOne(new LambdaQueryWrapper<RecruitmentRequisition>()
+                .eq(RecruitmentRequisition::getPositionId, positionId).last("LIMIT 1"));
+    }
+
+    private RecruitmentRequisition requireRequisition(Long positionId) {
+        RecruitmentRequisition requisition = findRequisition(positionId);
+        if (requisition == null) throw BusinessException.notFound("招聘需求不存在");
+        return requisition;
+    }
+
+    private RecruitmentDtos.RequisitionView toRequisitionView(RecruitmentRequisition item) {
+        return new RecruitmentDtos.RequisitionView(item.getId(), item.getRequisitionNo(), item.getHeadcountCode(),
+                item.getRequestedHeadcount(), item.getApprovedHeadcount(), item.getCostCenterCode(), item.getCostCenterName(),
+                item.getBudgetAmount(), item.getBudgetCurrency(), item.getBusinessJustification(), item.getApprovalStatus(),
+                item.getSubmittedBy(), item.getSubmittedAt(), item.getReviewedBy(), item.getReviewedAt(), item.getReviewNote(),
+                Integer.valueOf(1).equals(item.getFrozen()), item.getFrozenBy(), item.getFrozenAt(), item.getFreezeReason(),
+                item.getUpdatedAt());
+    }
+
+    private List<RecruitmentDtos.RequisitionEventView> requisitionHistory(Long requisitionId) {
+        return requisitionEventMapper.selectList(new LambdaQueryWrapper<RecruitmentRequisitionEvent>()
+                        .eq(RecruitmentRequisitionEvent::getRequisitionId, requisitionId)
+                        .orderByAsc(RecruitmentRequisitionEvent::getCreatedAt)
+                        .orderByAsc(RecruitmentRequisitionEvent::getId))
+                .stream().map(item -> {
+                    UserAccount operator = item.getOperatorId() == null ? null : userMapper.selectById(item.getOperatorId());
+                    String operatorName = operator == null ? "系统" : StringUtils.hasText(operator.getRealName())
+                            ? operator.getRealName() : operator.getUsername();
+                    return new RecruitmentDtos.RequisitionEventView(item.getId(), item.getEventType(), item.getFromStatus(),
+                            item.getToStatus(), item.getOperatorId(), operatorName, item.getNote(), item.getCreatedAt());
+                }).toList();
+    }
+
+    private void recordRequisitionEvent(RecruitmentRequisition requisition, String eventType,
+                                        String fromStatus, String toStatus, String note) {
+        RecruitmentRequisitionEvent event = new RecruitmentRequisitionEvent();
+        event.setRequisitionId(requisition.getId());
+        event.setEventType(eventType);
+        event.setFromStatus(fromStatus);
+        event.setToStatus(toStatus);
+        event.setOperatorId(currentUser.id());
+        event.setNote(trimToLength(note, 1000));
+        event.setCreatedAt(LocalDateTime.now());
+        requisitionEventMapper.insert(event);
+    }
+
+    private String nextRequisitionNo() {
+        String value;
+        do {
+            value = "REQ-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-"
+                    + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
+        } while (requisitionMapper.exists(new LambdaQueryWrapper<RecruitmentRequisition>()
+                .eq(RecruitmentRequisition::getRequisitionNo, value)));
+        return value;
+    }
+
     private void validatePositionRequest(RecruitmentDtos.PositionRequest request) {
         String jobType = normalizeEnum(request.jobType());
         if (!JOB_TYPES.contains(jobType)) throw BusinessException.badRequest("岗位类型不合法");
@@ -844,7 +1112,7 @@ public class RecruitmentService {
                 nullSafe(row.getInterviewCount()), nullSafe(row.getHiredCount()));
     }
 
-    private void validatePublishable(JobPosition position) {
+    public void validatePositionForPublication(JobPosition position) {
         if (!StringUtils.hasText(position.getPositionCode()) || !StringUtils.hasText(position.getName())) {
             throw BusinessException.badRequest("发布前请补充岗位编码和岗位名称");
         }
@@ -997,9 +1265,12 @@ public class RecruitmentService {
 
     private JobPosition requirePublishedPosition(Long id) {
         JobPosition position = positionMapper.selectById(id);
+        RecruitmentRequisition requisition = position == null ? null : findRequisition(position.getId());
         LocalDateTime now = LocalDateTime.now();
         if (position == null || position.getCompanyId() == null || !Integer.valueOf(1).equals(position.getStatus())
                 || !"PUBLISHED".equals(position.getRecruitmentStatus()) || position.getPublishedAt() == null
+                || requisition == null || !"APPROVED".equals(requisition.getApprovalStatus())
+                || Integer.valueOf(1).equals(requisition.getFrozen())
                 || position.getPublishedAt().isAfter(now) || (position.getExpiresAt() != null && !position.getExpiresAt().isAfter(now))) {
             throw BusinessException.notFound("岗位不存在或已停止招聘");
         }

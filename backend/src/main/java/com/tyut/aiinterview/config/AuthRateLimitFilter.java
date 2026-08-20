@@ -2,6 +2,7 @@ package com.tyut.aiinterview.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.common.ApiResponse;
+import com.tyut.aiinterview.utils.TokenHashUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,9 +31,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(AuthRateLimitFilter.class);
     private static final String LOGIN = "/v1/auth/login";
     private static final String REGISTER = "/v1/auth/register";
+    private static final String COMPANY_REGISTER = "/v1/auth/company/register";
     private static final String REGISTER_CODE = "/v1/auth/register/code";
     private static final String LOGIN_CODE_SEND = "/v1/auth/login/code/send";
     private static final String LOGIN_CODE = "/v1/auth/login/code";
+    private static final String CAPTCHA_CHALLENGE = "/v1/auth/captcha/challenge";
+    private static final String PASSWORD_RESET_CODE = "/v1/auth/password/reset/code";
+    private static final String PASSWORD_RESET_VERIFY = "/v1/auth/password/reset/verify";
+    private static final String PASSWORD_RESET_COMPLETE = "/v1/auth/password/reset/complete";
 
     private final StringRedisTemplate redisTemplate;
     private final AuthRateLimitProperties properties;
@@ -49,8 +55,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         if (!properties.isEnabled()) return true;
         String uri = request.getRequestURI();
-        return !uri.endsWith(LOGIN) && !uri.endsWith(REGISTER) && !uri.endsWith(REGISTER_CODE)
-                && !uri.endsWith(LOGIN_CODE_SEND) && !uri.endsWith(LOGIN_CODE);
+        return !uri.endsWith(LOGIN) && !uri.endsWith(REGISTER) && !uri.endsWith(COMPANY_REGISTER) && !uri.endsWith(REGISTER_CODE)
+                && !uri.endsWith(LOGIN_CODE_SEND) && !uri.endsWith(LOGIN_CODE)
+                && !uri.endsWith(CAPTCHA_CHALLENGE) && !uri.endsWith(PASSWORD_RESET_CODE)
+                && !uri.endsWith(PASSWORD_RESET_VERIFY) && !uri.endsWith(PASSWORD_RESET_COMPLETE);
     }
 
     @Override
@@ -67,17 +75,32 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             reject(response);
             return;
         }
-        if ((uri.endsWith(REGISTER_CODE) || uri.endsWith(LOGIN_CODE_SEND))
+        if (uri.endsWith(COMPANY_REGISTER)
+                && !allow("company-register", clientIp, properties.getCompanyRegisterPerMinute(), 60)) {
+            reject(response);
+            return;
+        }
+        if ((uri.endsWith(REGISTER_CODE) || uri.endsWith(LOGIN_CODE_SEND) || uri.endsWith(PASSWORD_RESET_CODE))
                 && (!allow("code-send", clientIp, properties.getCodeSendPerMinute(), 60)
                     || !allow("code-send-day", clientIp, properties.getCodeSendPerDay(), 86_400))) {
             reject(response);
             return;
         }
-        if (uri.endsWith(LOGIN_CODE) && !allow("login-code", clientIp, properties.getLoginCodePerMinute(), 60)) {
+        if ((uri.endsWith(LOGIN_CODE) || uri.endsWith(PASSWORD_RESET_VERIFY))
+                && !allow("login-code", clientIp, properties.getLoginCodePerMinute(), 60)) {
             reject(response);
             return;
         }
-
+        if (uri.endsWith(PASSWORD_RESET_COMPLETE)
+                && !allow("password-reset-complete", clientIp, properties.getRegisterPerMinute(), 60)) {
+            reject(response);
+            return;
+        }
+        if (uri.endsWith(CAPTCHA_CHALLENGE)
+                && !allow("captcha-challenge", clientIp, properties.getCaptchaChallengePerMinute(), 60)) {
+            reject(response);
+            return;
+        }
         filterChain.doFilter(request, response);
     }
 
@@ -85,7 +108,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (limit <= 0) return false;
         try {
             long window = Instant.now().getEpochSecond() / windowSeconds;
-            String key = "auth:rl:" + bucket + ":" + clientIp + ":" + window;
+            String key = "auth:rl:" + bucket + ":" + TokenHashUtils.sha256(clientIp == null ? "" : clientIp) + ":" + window;
             Long count = redisTemplate.opsForValue().increment(key);
             if (count != null && count == 1L) {
                 redisTemplate.expire(key, windowSeconds, TimeUnit.SECONDS);

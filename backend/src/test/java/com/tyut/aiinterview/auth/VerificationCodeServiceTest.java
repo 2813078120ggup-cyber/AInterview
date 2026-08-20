@@ -152,4 +152,32 @@ class VerificationCodeServiceTest {
         assertThrows(BusinessException.class,
                 () -> service.verifyLoginCode("sms", "13800000000", "123456"));
     }
+
+    @Test
+    void loginCodeDerivesSmsChannelFromPhoneAndIgnoresLegacyChannel() {
+        when(redis.execute(any(RedisScript.class), any(java.util.List.class), anyString())).thenReturn(1L);
+
+        service.verifyLoginCode("email", "13800000000", "123456");
+
+        verify(redis).execute(any(RedisScript.class), eq(java.util.List.of("auth:login-code:sms:13800000000")),
+                eq("123456"));
+    }
+
+    @Test
+    void loginCodeDerivesEmailChannelFromEmailAndIgnoresLegacyChannel() {
+        service.sendLoginCode(new AuthDtos.SendLoginCodeRequest(
+                "sms", "candidate@example.com", "challenge", "ABCD"));
+
+        verify(values).setIfAbsent("auth:login-code-cooldown:email:candidate@example.com", "1", 60L,
+                java.util.concurrent.TimeUnit.SECONDS);
+        verify(values).set(eq("auth:login-code:email:candidate@example.com"), anyString(), eq(300L),
+                eq(java.util.concurrent.TimeUnit.SECONDS));
+    }
+
+    @Test
+    void loginCodeRejectsTargetThatIsNeitherPhoneNorEmail() {
+        assertThrows(BusinessException.class,
+                () -> service.sendLoginCode(new AuthDtos.SendLoginCodeRequest(
+                        "sms", "not-a-target", "challenge", "ABCD")));
+    }
 }

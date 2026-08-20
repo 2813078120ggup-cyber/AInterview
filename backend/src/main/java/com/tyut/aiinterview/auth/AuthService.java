@@ -15,11 +15,15 @@ import com.tyut.aiinterview.mapper.RolePermissionMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.mapper.UserRoleMapper;
 import com.tyut.aiinterview.observability.OperationAuditService;
+import com.tyut.aiinterview.security.AccountCredentialPolicy;
 import com.tyut.aiinterview.security.JwtTokenService;
 import com.tyut.aiinterview.security.LoginUser;
 import com.tyut.aiinterview.security.RefreshTokenService;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -94,17 +98,146 @@ public class AuthService implements UserDetailsService {
         return profile(user, List.of("CANDIDATE"));
     }
 
+    /**
+     * Atomically bootstraps a new enterprise tenant and its first COMPANY_ADMIN.
+     *
+     * <p>The phone verification is consumed before any row is written.  The company is inserted
+     * first with a null creator because the creator foreign key points back to the user; after the
+     * user and role rows exist, the company is linked to that first administrator in the same
+     * transaction.  A failed role lookup or audit write therefore rolls the whole bootstrap back.
+     */
+    @Transactional
+    public AuthDtos.CompanyRegisterResponse registerCompany(AuthDtos.CompanyRegisterRequest request) {
+        try {
+            return registerCompanyInternal(request);
+        } catch (RuntimeException exception) {
+            // Keep the business failure visible to the caller even if the audit store is
+            // temporarily unavailable.  The enclosing transaction still rolls back all rows.
+            if (auditService != null) {
+                try {
+                    auditService.failure("AUTHENTICATION", "COMPANY_REGISTER_FAILED", "COMPANY", null, null,
+                            "公开企业注册失败");
+                } catch (RuntimeException ignored) {
+                    // Do not turn a validation/conflict response into a generic 500.
+                }
+            }
+            throw exception;
+        }
+    }
+
+    private AuthDtos.CompanyRegisterResponse registerCompanyInternal(AuthDtos.CompanyRegisterRequest request) {
+        String username = requiredText(request.username(), "用户名不能为空");
+        if (!username.matches(AccountCredentialPolicy.USERNAME_REGEX)) {
+            throw BusinessException.badRequest(AccountCredentialPolicy.USERNAME_MESSAGE);
+        }
+        String password = requiredText(request.password(), "密码不能为空");
+        if (!password.matches(AccountCredentialPolicy.PASSWORD_REGEX)) {
+            throw BusinessException.badRequest(AccountCredentialPolicy.PASSWORD_MESSAGE);
+        }
+        String realName = boundedText(request.realName(), "姓名不能为空", 64);
+        String phone = VerificationCodeService.normalizePhone(request.phone());
+        String verificationCode = requiredText(request.verificationCode(), "验证码不能为空");
+        String email = normalizeOptionalEmail(request.email());
+        String companyName = boundedText(request.companyName(), "企业名称不能为空", 160);
+        String shortName = boundedOptional(request.shortName(), "企业简称", 80);
+        String industry = boundedText(request.industry(), "所属行业不能为空", 96);
+        String companySize = boundedText(request.companySize(), "企业规模不能为空", 48);
+        String city = boundedText(request.city(), "所在城市不能为空", 96);
+        String websiteUrl = normalizeWebsite(request.websiteUrl());
+        String description = boundedOptional(request.description(), "企业简介", 2000);
+        String legalRepresentative = boundedOptional(request.legalRepresentative(), "法定代表人", 64);
+        String businessLicenseNo = boundedOptional(request.businessLicenseNo(), "统一社会信用代码", 64);
+        if (businessLicenseNo != null && !businessLicenseNo.matches("^[A-Za-z0-9\\u4e00-\\u9fa5-]{5,64}$")) {
+            throw BusinessException.badRequest("统一社会信用代码格式不正确");
+        }
+        if (!verificationCode.matches("^\\d{6}$")) {
+            throw BusinessException.badRequest("验证码格式不正确");
+        }
+
+        if (userMapper.exists(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getUsername, username))) {
+            throw BusinessException.conflict("用户名已存在");
+        }
+        if (email != null && userMapper.exists(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getEmail, email))) {
+            throw BusinessException.conflict("邮箱已被注册");
+        }
+        if (userMapper.exists(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getPhone, phone))) {
+            throw BusinessException.conflict("手机号已被注册");
+        }
+        if (businessLicenseNo != null && companyMapper.exists(
+                new LambdaQueryWrapper<Company>().eq(Company::getBusinessLicenseNo, businessLicenseNo))) {
+            throw BusinessException.conflict("统一社会信用代码已登记");
+        }
+
+        verificationCodeService.verifyRegisterCode(phone, verificationCode);
+        Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
+                .eq(Role::getRoleCode, "COMPANY_ADMIN").eq(Role::getStatus, 1));
+        if (adminRole == null) {
+            throw new IllegalStateException("缺少 COMPANY_ADMIN 初始角色，请先执行角色初始化迁移");
+        }
+
+        Company company = new Company();
+        company.setCompanyCode(generateCompanyCode());
+        company.setBusinessLicenseNo(businessLicenseNo);
+        company.setName(companyName);
+        company.setShortName(shortName);
+        company.setIndustry(industry);
+        company.setCompanySize(companySize);
+        company.setCity(city);
+        company.setDescription(description);
+        company.setWebsiteUrl(websiteUrl);
+        company.setLegalRepresentative(legalRepresentative);
+        company.setRecruitmentContactName(realName);
+        company.setRecruitmentContactEmail(email);
+        company.setRecruitmentContactPhone(phone);
+        company.setStatus(1);
+
+        try {
+            companyMapper.insert(company);
+
+            UserAccount admin = new UserAccount();
+            admin.setUsername(username);
+            admin.setPasswordHash(passwordEncoder.encode(password));
+            admin.setRealName(realName);
+            admin.setEmail(email);
+            admin.setPhone(phone);
+            admin.setPhoneVerifiedAt(LocalDateTime.now());
+            admin.setCompanyId(company.getId());
+            admin.setStatus(1);
+            userMapper.insert(admin);
+
+            UserRole userRole = new UserRole();
+            userRole.setUserId(admin.getId());
+            userRole.setRoleId(adminRole.getId());
+            // The bootstrap administrator is a valid FK assignee and gives the role assignment
+            // an explicit audit trail without inventing a platform actor.
+            userRole.setAssignedBy(admin.getId());
+            userRole.setAssignedAt(LocalDateTime.now());
+            userRoleMapper.insert(userRole);
+
+            company.setCreatedBy(admin.getId());
+            companyMapper.updateById(company);
+            if (auditService != null) {
+                auditService.success("AUTHENTICATION", "COMPANY_REGISTER_SUCCESS", "COMPANY",
+                        company.getId(), company.getId(), "公开企业注册并创建首个企业管理员");
+            }
+            return new AuthDtos.CompanyRegisterResponse(company.getId(), company.getCompanyCode(),
+                    profile(admin, List.of("COMPANY_ADMIN")));
+        } catch (DuplicateKeyException exception) {
+            throw BusinessException.conflict("账号或企业登记信息已存在");
+        }
+    }
+
     @Transactional
     public AuthDtos.LoginResponse login(AuthDtos.LoginRequest request, String clientIp, String userAgent) {
-        UserAccount user = userMapper.selectOne(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getUsername, request.username()));
+        UserAccount user = findLoginUser(request.username());
         if (user != null && user.getStatus() != 1) {
             auditFailure("AUTH_LOGIN_DISABLED", user.getId(), user.getCompanyId(), "停用账号密码登录被拒绝");
-            throw BusinessException.forbidden("用户名或密码错误");
+            throw BusinessException.forbidden("用户名、手机号、邮箱或密码错误");
         }
         if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             auditFailure("AUTH_LOGIN_FAILED", user == null ? null : user.getId(),
                     user == null ? null : user.getCompanyId(), "密码登录失败");
-            throw BusinessException.forbidden("用户名或密码错误");
+            throw BusinessException.forbidden("用户名、手机号、邮箱或密码错误");
         }
         try {
             requireCompanyActive(user);
@@ -121,7 +254,7 @@ public class AuthService implements UserDetailsService {
     }
 
     public void sendLoginCode(AuthDtos.SendLoginCodeRequest request) {
-        requireRegisteredVerificationAccount(request.channel(), request.target());
+        requireRegisteredVerificationAccount(request.target());
         verificationCodeService.sendLoginCode(request);
     }
 
@@ -129,7 +262,7 @@ public class AuthService implements UserDetailsService {
     public AuthDtos.LoginResponse loginWithCode(AuthDtos.CodeLoginRequest request, String clientIp, String userAgent) {
         UserAccount user;
         try {
-            user = requireRegisteredVerificationAccount(request.channel(), request.target());
+            user = requireRegisteredVerificationAccount(request.target());
         } catch (BusinessException exception) {
             auditFailure("AUTH_LOGIN_CODE_FAILED", null, null, "验证码登录失败");
             throw exception;
@@ -140,7 +273,7 @@ public class AuthService implements UserDetailsService {
         }
         try {
             requireCompanyActive(user);
-            verificationCodeService.verifyLoginCode(request.channel(), request.target(), request.verificationCode());
+            verificationCodeService.verifyLoginCode(null, request.target(), request.verificationCode());
         } catch (BusinessException exception) {
             auditFailure("AUTH_LOGIN_CODE_FAILED", user.getId(), user.getCompanyId(), "验证码登录失败");
             throw exception;
@@ -231,6 +364,78 @@ public class AuthService implements UserDetailsService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    private static String normalizeOptionalEmail(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String normalized = VerificationCodeService.normalizeEmail(value);
+        if (normalized.length() > 128 || hasControlCharacter(normalized)) {
+            throw BusinessException.badRequest("邮箱格式不正确");
+        }
+        return normalized;
+    }
+
+    private static String requiredText(String value, String message) {
+        if (!StringUtils.hasText(value)) throw BusinessException.badRequest(message);
+        return value.trim();
+    }
+
+    private static String boundedText(String value, String message, int maxLength) {
+        String normalized = requiredText(value, message);
+        if (normalized.length() > maxLength || hasControlCharacter(normalized)) {
+            throw BusinessException.badRequest(message.replace("不能为空", "格式不正确"));
+        }
+        return normalized;
+    }
+
+    private static String boundedOptional(String value, String field, int maxLength) {
+        if (!StringUtils.hasText(value)) return null;
+        String normalized = value.trim();
+        if (normalized.length() > maxLength || hasControlCharacter(normalized)) {
+            throw BusinessException.badRequest(field + "格式不正确");
+        }
+        return normalized;
+    }
+
+    private static String normalizeWebsite(String value) {
+        String normalized = boundedOptional(value, "企业网站", 512);
+        if (normalized == null) return null;
+        try {
+            java.net.URI uri = java.net.URI.create(normalized);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!("http".equals(scheme) || "https".equals(scheme)) || !StringUtils.hasText(uri.getHost())) {
+                throw new IllegalArgumentException("invalid website");
+            }
+            return uri.toString();
+        } catch (IllegalArgumentException exception) {
+            throw BusinessException.badRequest("企业网站地址不正确");
+        }
+    }
+
+    private static boolean hasControlCharacter(String value) {
+        return value.chars().anyMatch(Character::isISOControl);
+    }
+
+    private String generateCompanyCode() {
+        String code;
+        do {
+            code = "ENT-" + UUID.randomUUID().toString().replace("-", "")
+                    .substring(0, 20).toUpperCase(Locale.ROOT);
+        } while (companyMapper.exists(new LambdaQueryWrapper<Company>().eq(Company::getCompanyCode, code)));
+        return code;
+    }
+
+    private UserAccount findLoginUser(String identifier) {
+        String normalized = normalizeOptional(identifier);
+        if (normalized == null) return null;
+        UserAccount user = null;
+        if (normalized.contains("@")) {
+            user = userMapper.selectOne(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getEmail, normalized));
+        } else if (normalized.matches("^1\\d{10}$")) {
+            user = userMapper.selectOne(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getPhone, normalized));
+        }
+        return user != null ? user
+                : userMapper.selectOne(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getUsername, normalized));
+    }
+
     private void requireCompanyActive(UserAccount user) {
         if (user.getCompanyId() == null) return;
         Company company = companyMapper.selectById(user.getCompanyId());
@@ -254,11 +459,17 @@ public class AuthService implements UserDetailsService {
         if (auditService != null) auditService.failure("AUTHENTICATION", action, "USER", userId, companyId, summary);
     }
 
-    private UserAccount requireRegisteredVerificationAccount(String channel, String target) {
-        String normalizedChannel = channel == null ? "" : channel.trim().toLowerCase();
+    private UserAccount requireRegisteredVerificationAccount(String target) {
         String normalizedTarget = normalizeOptional(target);
-        if (normalizedTarget == null || (!"sms".equals(normalizedChannel) && !"email".equals(normalizedChannel))) {
-            throw BusinessException.badRequest("验证码登录方式不正确");
+        if (normalizedTarget == null) throw BusinessException.badRequest("手机号或邮箱格式不正确");
+        String normalizedChannel;
+        if (normalizedTarget.matches("^1\\d{10}$")) {
+            normalizedChannel = "sms";
+        } else if (normalizedTarget.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            normalizedChannel = "email";
+            normalizedTarget = VerificationCodeService.normalizeEmail(normalizedTarget);
+        } else {
+            throw BusinessException.badRequest("手机号或邮箱格式不正确");
         }
         LambdaQueryWrapper<UserAccount> query = new LambdaQueryWrapper<>();
         if ("sms".equals(normalizedChannel)) {

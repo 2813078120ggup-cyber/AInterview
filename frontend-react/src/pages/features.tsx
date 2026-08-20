@@ -51,6 +51,29 @@ function InterviewTimeline() {
   return <div className="interview-storyline" aria-label="连续追问示例"><div className="interview-storyline-line" aria-hidden="true" /><div><span>问题</span><strong>项目经历</strong><small>关联简历内容</small></div><div><span>作答</span><strong>Redis 缓存</strong><small>说明实施方案</small></div><div><span>追问</span><strong>缓存一致性</strong><small>核实技术边界</small></div><div><span>复核</span><strong>高并发处理</strong><small>形成评估依据</small></div></div>
 }
 
+function EvidenceChain() {
+  const evidenceNodes = [
+    { icon: ClipboardCheck, label: '系统记录', description: '岗位要求、简历与面试过程按申请留痕' },
+    { icon: Sparkles, label: '模型辅助', description: '匹配评分与评估建议提供可复核依据' },
+    { icon: ShieldCheck, label: '企业决定', description: '由授权招聘人员确认最终录用结论' },
+  ]
+
+  return <section className="features-evidence-section" aria-labelledby="evidence-title">
+    <div className="features-container">
+      <div className="features-evidence-heading">
+        <div><h2 id="evidence-title">招聘结论，都有来处。</h2></div>
+        <p>让记录、建议和决定各归其位，团队在同一条链路上推进招聘。</p>
+      </div>
+      <div className="features-evidence-chain">
+        {evidenceNodes.map(({ icon: Icon, label, description }) => <div className="features-evidence-item" key={label}>
+          <span className="features-evidence-icon"><Icon size={18} aria-hidden="true" /></span>
+          <div><h3>{label}</h3><p>{description}</p></div>
+        </div>)}
+      </div>
+    </div>
+  </section>
+}
+
 export function FeaturesPage() {
   const navigate = useNavigate()
 
@@ -60,7 +83,7 @@ export function FeaturesPage() {
     return () => { document.title = previousTitle }
   }, [])
 
-  return <div className="features-page">
+  return <div id="top" className="features-page">
     <FeaturesNav />
     <main>
       <section className="features-hero" aria-labelledby="features-hero-title">
@@ -68,13 +91,14 @@ export function FeaturesPage() {
           <Reveal className="features-hero-copy">
             <p className="features-eyebrow">招聘协同 · 面试评估</p>
             <h1 id="features-hero-title">见人，见岗，<em>见依据。</em></h1>
-            <p className="features-hero-description">将岗位要求、候选人简历、面试记录与评估报告纳入同一流程，支持从申请提交到企业复核的全过程管理。</p>
+            <p className="features-hero-description">把岗位、简历、面试与评估放进同一条招聘链路，从申请提交到企业复核，都有清晰记录。</p>
             <div className="features-hero-actions"><Button type="button" onClick={() => navigate(platformEntry())}>进入平台<ArrowRight size={16} /></Button><a href="#capabilities" className="features-outline-link">查看核心能力<ChevronRight size={16} /></a></div>
-            <div className="features-hero-note"><ShieldCheck size={15} /><span>系统记录过程并辅助评估，录用结论由企业作出</span></div>
           </Reveal>
           <Reveal className="features-hero-demo" delay={100}><HeroOverviewMockup /></Reveal>
         </div>
       </section>
+
+      <EvidenceChain />
 
       <section className="features-overview-section" aria-labelledby="overview-title">
         <div className="features-container"><Reveal><div className="features-overview-heading"><div><span className="features-overview-kicker">从岗位到录用</span><h2 id="overview-title">一岗一档，<br />一面一据。</h2></div><p>岗位、简历、面试与评估按申请关联，减少跨页面整理，支持团队依据统一记录推进流程。</p></div></Reveal><Reveal delay={80}><WorkflowStrip /></Reveal></div>

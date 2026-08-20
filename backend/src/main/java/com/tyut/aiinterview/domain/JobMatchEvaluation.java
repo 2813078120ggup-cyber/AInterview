@@ -17,6 +17,8 @@ public class JobMatchEvaluation {
     private String status;
     private String positionSnapshot;
     private String resumeSnapshot;
+    private String redactionVersion;
+    private String redactionSummary;
     private BigDecimal ruleScore;
     private BigDecimal aiScore;
     private BigDecimal finalScore;
@@ -29,6 +31,12 @@ public class JobMatchEvaluation {
     private String evidence;
     private String recommendation;
     private String confidence;
+    private Integer humanReviewRequired;
+    private String humanReviewStatus;
+    private String humanReviewDecision;
+    private String humanReviewNote;
+    private Long humanReviewedBy;
+    private LocalDateTime humanReviewedAt;
     private String providerName;
     private String modelName;
     private Integer promptVersion;

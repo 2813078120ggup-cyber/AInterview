@@ -1,11 +1,15 @@
 package com.tyut.aiinterview.recruitment;
 
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import java.math.BigDecimal;
@@ -27,12 +31,28 @@ public final class RecruitmentDtos {
                           Integer salaryMin, Integer salaryMax, String city, String experienceRequirement,
                           String educationRequirement, String jobType, String description, String requirements,
                           List<String> skillTags, String recruitmentStatus, LocalDateTime publishedAt,
-                          LocalDateTime expiresAt, boolean applied, LocalDateTime updatedAt) {}
+                          LocalDateTime expiresAt, String approvalStatus, boolean frozen,
+                          boolean applied, LocalDateTime updatedAt) {}
 
     public record PositionStatistics(long applicationCount, BigDecimal averageMatchScore,
                                      long interviewCount, long hiredCount) {}
 
-    public record PositionDetail(JobView job, PositionStatistics statistics) {}
+    public record RequisitionView(Long id, String requisitionNo, String headcountCode,
+                                  Integer requestedHeadcount, Integer approvedHeadcount,
+                                  String costCenterCode, String costCenterName,
+                                  BigDecimal budgetAmount, String budgetCurrency,
+                                  String businessJustification, String approvalStatus,
+                                  Long submittedBy, LocalDateTime submittedAt,
+                                  Long reviewedBy, LocalDateTime reviewedAt, String reviewNote,
+                                  boolean frozen, Long frozenBy, LocalDateTime frozenAt,
+                                  String freezeReason, LocalDateTime updatedAt) {}
+
+    public record RequisitionEventView(Long id, String eventType, String fromStatus, String toStatus,
+                                       Long operatorId, String operatorName, String note,
+                                       LocalDateTime createdAt) {}
+
+    public record PositionDetail(JobView job, PositionStatistics statistics,
+                                 RequisitionView requisition, List<RequisitionEventView> approvalHistory) {}
 
     public record ApplyRequest(Long resumeId, @Size(max = 1000) String candidateMessage) {}
 
@@ -64,7 +84,12 @@ public final class RecruitmentDtos {
                                       String summary, List<String> ruleMatchedSkills, List<String> matchedSkills,
                                       List<String> strengths, List<String> gaps, List<String> risks, List<String> evidence,
                                       String confidence, String providerName, String modelName, Integer promptVersion,
-                                      String recommendation, LocalDateTime createdAt, LocalDateTime finishedAt) {}
+                                      String recommendation, boolean humanReviewRequired, String humanReviewStatus,
+                                      String humanReviewDecision, String humanReviewNote, Long humanReviewedBy,
+                                      LocalDateTime humanReviewedAt, LocalDateTime createdAt, LocalDateTime finishedAt) {}
+
+    public record MatchReviewRequest(@NotBlank @Size(max = 20) String decision,
+                                     @Size(max = 1000) String note) {}
 
     public record InterviewQuestionBankView(Long id, String name, String description) {}
 
@@ -116,9 +141,18 @@ public final class RecruitmentDtos {
                                   @NotBlank @Size(max = 32) String jobType,
                                   @Size(max = 10000) String description,
                                   @Size(max = 10000) String requirements,
-                                  @Size(max = 20) List<@Size(max = 48) String> skillTags,
-                                  @Size(max = 20) String recruitmentStatus,
-                                  LocalDateTime expiresAt) {}
+                                   @Size(max = 20) List<@Size(max = 48) String> skillTags,
+                                   @Size(max = 20) String recruitmentStatus,
+                                   LocalDateTime expiresAt,
+                                   @NotNull @Valid RequisitionRequest requisition) {}
+
+    public record RequisitionRequest(@NotBlank @Size(max = 64) String headcountCode,
+                                     @NotNull @Min(1) @Max(1000) Integer requestedHeadcount,
+                                     @NotBlank @Size(max = 64) String costCenterCode,
+                                     @Size(max = 128) String costCenterName,
+                                     @NotNull @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal budgetAmount,
+                                     @NotBlank @Pattern(regexp = "[A-Za-z]{3}") String budgetCurrency,
+                                     @NotBlank @Size(max = 2000) String businessJustification) {}
 
     public record PositionStatusRequest(@NotBlank @Size(max = 20) String status,
                                         @Size(max = 1000) String note) {}

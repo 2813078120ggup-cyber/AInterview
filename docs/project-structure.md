@@ -1,6 +1,6 @@
 # 项目结构说明
 
-> 更新日期：2026-08-13  
+> 更新日期：2026-08-20  
 > 当前根目录：`D:\Ainterview`  
 > 本文档以当前工作区真实代码、Maven 配置、前端路由、Flyway 脚本和 `docker-compose.yml` 为准。
 
@@ -90,7 +90,7 @@ backend/
 │  ├─ algorithm/            算法 API、提交记录、任务发布和 Worker 客户端
 │  ├─ account/              当前用户资料、头像、联系方式、密码、会话、通知偏好和安全活动
 │  ├─ admin/                超级管理员工作台、企业、招聘、AI 运维和平台操作
-│  ├─ auth/                 注册、登录、验证码和刷新令牌
+│  ├─ auth/                 个人/企业 HR 注册、登录、四位图形验证码和刷新令牌
 │  ├─ common/               统一响应、异常和分页基础对象
 │  ├─ config/               应用、Flyway、JSON、限流和上传安全配置
 │  ├─ domain/               MyBatis-Plus 业务实体
@@ -110,13 +110,14 @@ backend/
 │  ├─ reflection/           候选人面试心得
 │  ├─ report/               面试报告、发布和查询
 │  ├─ security/             JWT、Spring Security 和当前用户
-│  ├─ settings/             AI Provider 与密钥加密
+│  ├─ governance/           招聘 AI 评测、回归门禁、公平性与人工复核治理
+│  ├─ settings/             AI Provider、平台 UI 设置与主题开关
 │  ├─ ticket/               反馈工单、附件、转派、时间线和状态机
 │  ├─ user/                 用户、角色、权限和候选人管理
 │  ├─ utils/                通用安全与数据工具
 │  └─ virtualhuman/         OpenTalking 配置与服务端边界
 ├─ src/main/resources/
-│  ├─ db/migration/         唯一有效的 Flyway 迁移目录（当前至 V40，共 33 个脚本）
+│  ├─ db/migration/         唯一有效的 Flyway 迁移目录（当前至 V47，共 40 个脚本）
 │  ├─ prompts/defaults/     默认面试、评分和招聘匹配提示词
 │  └─ application.yml       应用默认配置与环境变量入口
 ├─ src/test/                后端单元测试和 Spring 上下文测试
@@ -212,7 +213,7 @@ frontend-react/
 
 | 分区 | 页面壳 | 主要路由 |
 |---|---|---|
-| 公开页 | 独立页面 | `/`、`/features`、`/login` |
+| 公开页 | 独立页面 | `/`、`/features`、`/login`、`/register`、`/forgot-password` |
 | 候选人端 | `CandidatePageShell` | `/workspace`、`/jobs`、`/applications`、`/resumes`、`/candidate/interviews`、`/algorithm/**`、`/learning-resources/**`、`/candidate/tickets/**` |
 | 候选人账户 | `CandidatePageShell` | `/candidate/settings/profile`、`/candidate/settings/security`、`/candidate/settings/notifications`；`/candidate/settings` 和 `/users` 保留重定向并传递 query 参数 |
 | 企业/HR 端 | `CompanyPageShell` | `/company`、`/company/positions/**`、`/company/applications/**`、`/company/interviews/**`、`/company/talent-pool/**`、`/company/team`、`/company/settings`、`/company/analytics/**` |
@@ -220,6 +221,10 @@ frontend-react/
 | 面试专用页 | 独立受保护页面 | `/candidate/interviews/:id/room`、`/candidate/interviews/:id/report`、`/candidate/free-interview` |
 
 当前 `frontend-react/src/app.tsx` 保持页面懒加载；账户设置的资料、安全和通知页共享一次 `CandidatePageShell`，旧 `/users` 仅作兼容重定向。企业端已经包含面试、人才库、团队和分析域；超级管理员端已经包含企业、用户、角色、招聘和 AI 运维域。后续页面扩展应在不改变现有路由权限的前提下进行。
+
+公开认证页共享 `AuthTopBar`、`AuthFlowShell`、`ImageCaptcha` 和会话上下文：登录页支持用户名/手机号/邮箱密码登录与自动识别联系方式的验证码登录；注册页分流个人用户和企业 HR，企业注册在服务端创建租户及首个 `COMPANY_ADMIN`；找回密码先校验账户是否存在再进入重置步骤。认证成功后由 `/v1/auth/me` 返回的服务端身份决定工作区，浏览器本地显示缓存不能单独授权。
+
+企业注册接口为 `POST /v1/auth/company/register`，不接受客户端提交的 `role` 或 `companyId`；服务端生成企业编码、绑定首个 HR 用户并返回注册状态，不在注册成功时静默发放会话。企业、候选人和管理员路由及 API 均保留受众/租户边界，企业停用时继续 fail-closed。
 
 ### 7.2 前端运行边界
 
@@ -236,7 +241,7 @@ frontend-react/
 backend/src/main/resources/db/migration/
 ```
 
-当前目录共有 33 个版本化脚本，版本序列为 V1、V9–V40，最新发布脚本为 `V40__create_account_security_foundation.sql`。Flyway 配置使用 `baseline-version: 8`、`validate-on-migrate: true`、`out-of-order: false`。
+当前目录共有 40 个版本化脚本，版本序列为 V1、V9–V47，最新发布脚本为 `V47__support_public_company_registration.sql`。Flyway 配置使用 `baseline-version: 8`、`validate-on-migrate: true`、`out-of-order: false`。
 
 招聘链路新增迁移如下：
 
@@ -256,8 +261,15 @@ backend/src/main/resources/db/migration/
 | V38 | 企业招聘联系人 |
 | V39 | 角色版本乐观锁字段 |
 | V40 | 账户安全基础：头像媒体绑定、联系方式验证时间、security version、资料 version、Refresh Token 会话字段和通知偏好 |
+| V41 | AI 任务租约与恢复字段 |
+| V42 | 候选人面试执行权限边界 |
+| V43 | AI Provider 测试状态持久化 |
+| V44 | 招聘 AI 治理：评测集、回归门禁、策略、审计、成本预留和紧急停用 |
+| V45 | 招聘 requisition、headcount、cost center、预算和超级管理员审批流 |
+| V46 | 平台 UI 设置与主题开关（含鼠标跟随偏好） |
+| V47 | 企业 HR 注册字段、企业标识唯一约束和公开注册支撑 |
 
-V40 及以前已发布迁移禁止修改；下一次数据库结构变更必须先重新检查目录最高版本，若无新增脚本则从 V41 开始。应用启动时只有 backend 执行 Flyway，Worker、Gateway 和注册中心不执行迁移。
+V47 及以前已发布迁移禁止修改；下一次数据库结构变更必须先重新检查目录最高版本，若无新增脚本则从 V48 开始。应用启动时只有 backend 执行 Flyway，Worker、Gateway 和注册中心不执行迁移。
 
 学习资料 PDF、简历、录制和工单附件均复用私有媒体存储；数据库保存元数据、授权关系、摘要和业务记录，原始文件不进入前端构建产物。
 

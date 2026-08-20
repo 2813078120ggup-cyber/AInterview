@@ -71,6 +71,23 @@ class AuthRateLimitFilterTest {
         }
         assertEquals(429, invoke("/api/v1/auth/register/code").getStatus());
         assertEquals(429, invoke("/api/v1/auth/login/code/send").getStatus());
+        assertEquals(429, invoke("/api/v1/auth/password/reset/code").getStatus());
+    }
+
+    @Test
+    void appliesDedicatedImageChallengeLimit() throws Exception {
+        properties.setCaptchaChallengePerMinute(2);
+        assertEquals(200, invoke("/api/v1/auth/captcha/challenge").getStatus());
+        assertEquals(200, invoke("/api/v1/auth/captcha/challenge").getStatus());
+        assertEquals(429, invoke("/api/v1/auth/captcha/challenge").getStatus());
+    }
+
+    @Test
+    void appliesDedicatedCompanyRegistrationLimit() throws Exception {
+        properties.setCompanyRegisterPerMinute(2);
+        assertEquals(200, invoke("/api/v1/auth/company/register").getStatus());
+        assertEquals(200, invoke("/api/v1/auth/company/register").getStatus());
+        assertEquals(429, invoke("/api/v1/auth/company/register").getStatus());
     }
 
     @Test

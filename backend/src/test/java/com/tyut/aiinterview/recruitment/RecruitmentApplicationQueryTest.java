@@ -21,6 +21,8 @@ import com.tyut.aiinterview.mapper.JobMatchEvaluationMapper;
 import com.tyut.aiinterview.mapper.JobPositionMapper;
 import com.tyut.aiinterview.mapper.OfflineInterviewMapper;
 import com.tyut.aiinterview.mapper.QuestionBankMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionEventMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.notification.SiteNotificationService;
 import com.tyut.aiinterview.security.CurrentUser;
@@ -47,6 +49,8 @@ class RecruitmentApplicationQueryTest {
     private final UserMapper userMapper = org.mockito.Mockito.mock(UserMapper.class);
     private final InterviewMapper interviewMapper = org.mockito.Mockito.mock(InterviewMapper.class);
     private final QuestionBankMapper questionBankMapper = org.mockito.Mockito.mock(QuestionBankMapper.class);
+    private final RecruitmentRequisitionMapper requisitionMapper = org.mockito.Mockito.mock(RecruitmentRequisitionMapper.class);
+    private final RecruitmentRequisitionEventMapper requisitionEventMapper = org.mockito.Mockito.mock(RecruitmentRequisitionEventMapper.class);
     private final InterviewService interviewService = org.mockito.Mockito.mock(InterviewService.class);
     private final SiteNotificationService notificationService = org.mockito.Mockito.mock(SiteNotificationService.class);
     private final CurrentUser currentUser = org.mockito.Mockito.mock(CurrentUser.class);
@@ -63,7 +67,7 @@ class RecruitmentApplicationQueryTest {
         service = new RecruitmentService(positionMapper, companyMapper, applicationMapper, resumeMapper,
                 matchEvaluationMapper, historyMapper, offlineInterviewMapper, userMapper, interviewMapper,
                 questionBankMapper, interviewService, notificationService, currentUser, new ObjectMapper(),
-                taskService, companyAccess, statusService, auditService);
+                taskService, companyAccess, statusService, auditService, requisitionMapper, requisitionEventMapper);
         when(companyAccess.requirePermission("application:read")).thenReturn(100L);
         when(applicationMapper.selectPage(any(Page.class), any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(positionMapper.selectList(any())).thenReturn(List.of());

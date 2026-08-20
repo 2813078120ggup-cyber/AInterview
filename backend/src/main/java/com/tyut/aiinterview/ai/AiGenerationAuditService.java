@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.tyut.aiinterview.common.PageResult;
 import com.tyut.aiinterview.domain.AiGenerationRecord;
 import com.tyut.aiinterview.mapper.AiGenerationRecordMapper;
+import com.tyut.aiinterview.governance.RecruitmentAiGovernanceService;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -20,12 +22,23 @@ public class AiGenerationAuditService {
 
     public AiGenerationRecord start(AiGenerationContext context, String promptCode, Integer promptVersion,
                                     String provider, String model, int inputChars) {
+        return start(context, promptCode, promptVersion, provider, model, inputChars,
+                RecruitmentAiGovernanceService.Permit.ungoverned());
+    }
+
+    public AiGenerationRecord start(AiGenerationContext context, String promptCode, Integer promptVersion,
+                                    String provider, String model, int inputChars,
+                                    RecruitmentAiGovernanceService.Permit permit) {
         AiGenerationRecord record = new AiGenerationRecord();
         record.setRequestId(UUID.randomUUID().toString());
         record.setTaskId(context.taskId());
         record.setInterviewId(context.interviewId());
         record.setFreeInterviewSessionId(context.freeInterviewSessionId());
+        record.setCompanyId(permit.companyId());
         record.setGenerationType(context.generationType());
+        record.setGovernanceScope(permit.governanceScope());
+        record.setGovernancePolicyId(permit.policyId());
+        record.setCostReservationId(permit.reservationId());
         record.setPromptCode(promptCode);
         record.setPromptVersionNo(promptVersion);
         record.setProvider(provider);
@@ -33,6 +46,7 @@ public class AiGenerationAuditService {
         record.setStatus("RUNNING");
         record.setInputChars(Math.max(0, inputChars));
         record.setOutputChars(0);
+        record.setEstimatedCostUsd(permit.estimatedCostUsd());
         record.setCreatedBy(context.createdBy());
         record.setStartedAt(LocalDateTime.now());
         mapper.insert(record);
@@ -41,11 +55,18 @@ public class AiGenerationAuditService {
 
     public void success(AiGenerationRecord record, int outputChars, Integer promptTokens,
                         Integer completionTokens, Integer totalTokens, Integer httpStatus) {
+        success(record, outputChars, promptTokens, completionTokens, totalTokens, httpStatus, null);
+    }
+
+    public void success(AiGenerationRecord record, int outputChars, Integer promptTokens,
+                        Integer completionTokens, Integer totalTokens, Integer httpStatus,
+                        BigDecimal actualCostUsd) {
         record.setStatus("SUCCESS");
         record.setOutputChars(Math.max(0, outputChars));
         record.setPromptTokens(promptTokens);
         record.setCompletionTokens(completionTokens);
         record.setTotalTokens(totalTokens);
+        record.setActualCostUsd(actualCostUsd);
         record.setHttpStatus(httpStatus);
         finish(record);
     }

@@ -20,6 +20,12 @@ public class Report {
     private String weaknesses;
     private String improvementSuggestions;
     private String generationMethod;
+    private Integer humanReviewRequired;
+    private String humanReviewStatus;
+    private String humanReviewDecision;
+    private String humanReviewNote;
+    private Long humanReviewedBy;
+    private LocalDateTime humanReviewedAt;
     private String scoringPromptCode;
     private Integer scoringPromptVersionNo;
     private String reportPromptCode;

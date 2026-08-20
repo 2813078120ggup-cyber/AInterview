@@ -18,6 +18,7 @@ public class PasswordResetService {
     private final UserMapper userMapper;
     private final CompanyMapper companyMapper;
     private final VerificationCodeService verificationCodeService;
+    private final PasswordResetTicketService ticketService;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
     private final SecurityNotificationService notificationService;
@@ -25,12 +26,14 @@ public class PasswordResetService {
 
     public PasswordResetService(UserMapper userMapper, CompanyMapper companyMapper,
                                 VerificationCodeService verificationCodeService,
+                                PasswordResetTicketService ticketService,
                                 PasswordEncoder passwordEncoder, RefreshTokenService refreshTokenService,
                                 SecurityNotificationService notificationService,
                                 OperationAuditService auditService) {
         this.userMapper = userMapper;
         this.companyMapper = companyMapper;
         this.verificationCodeService = verificationCodeService;
+        this.ticketService = ticketService;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokenService = refreshTokenService;
         this.notificationService = notificationService;
@@ -59,6 +62,45 @@ public class PasswordResetService {
         }
     }
 
+    public AuthDtos.PasswordResetVerifyResponse verifyCode(AuthDtos.PasswordResetVerifyRequest request) {
+        NormalizedTarget target = normalize(request.channel(), request.target());
+        UserAccount user = findVerifiedAccount(target);
+        boolean enabled = isAccountEnabled(user);
+        try {
+            verificationCodeService.verifyPasswordResetCode(enabled ? user.getId() : null,
+                    target.channel(), target.value(), request.verificationCode());
+        } catch (BusinessException exception) {
+            auditService.denied("AUTHENTICATION", "PASSWORD_RESET_REJECTED", "USER",
+                    user == null ? null : user.getId(), user == null ? null : user.getCompanyId(),
+                    "密码重置验证码校验失败");
+            throw exception;
+        }
+        if (!enabled) {
+            auditService.denied("AUTHENTICATION", "PASSWORD_RESET_REJECTED", "USER", null, null,
+                    "密码重置验证码校验失败");
+            throw BusinessException.badRequest("验证码错误或已过期");
+        }
+        int securityVersion = user.getSecurityVersion() == null ? 0 : user.getSecurityVersion();
+        PasswordResetTicketService.IssuedTicket ticket = ticketService.issue(user.getId(), securityVersion);
+        auditService.success("AUTHENTICATION", "PASSWORD_RESET_VERIFIED", "USER", user.getId(),
+                user.getCompanyId(), "密码重置账户验证通过");
+        return new AuthDtos.PasswordResetVerifyResponse(ticket.token(), ticket.expiresInSeconds());
+    }
+
+    @Transactional
+    public AuthDtos.PasswordResetResponse complete(AuthDtos.PasswordResetCompleteRequest request) {
+        PasswordResetTicketService.VerifiedTicket ticket = ticketService.consume(request.resetToken());
+        UserAccount user = userMapper.selectById(ticket.userId());
+        int currentSecurityVersion = user == null || user.getSecurityVersion() == null ? 0 : user.getSecurityVersion();
+        if (!isAccountEnabled(user) || currentSecurityVersion != ticket.securityVersion()) {
+            auditService.denied("AUTHENTICATION", "PASSWORD_RESET_REJECTED", "USER",
+                    user == null ? null : user.getId(), user == null ? null : user.getCompanyId(),
+                    "密码重置票据对应的账户安全状态已变化");
+            throw BusinessException.badRequest("账户验证已失效，请重新验证");
+        }
+        return changePassword(user, request.newPassword());
+    }
+
     @Transactional
     public AuthDtos.PasswordResetResponse reset(AuthDtos.PasswordResetRequest request) {
         NormalizedTarget target = normalize(request.channel(), request.target());
@@ -79,7 +121,11 @@ public class PasswordResetService {
                     "密码重置请求已统一处理");
             return new AuthDtos.PasswordResetResponse("密码重置请求已处理，请使用新密码重新登录");
         }
-        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+        return changePassword(user, request.newPassword());
+    }
+
+    private AuthDtos.PasswordResetResponse changePassword(UserAccount user, String newPassword) {
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
             auditService.denied("AUTHENTICATION", "PASSWORD_RESET_REJECTED", "USER", user.getId(),
                     user.getCompanyId(), "密码重置时新旧密码相同");
             throw BusinessException.badRequest("新密码不能与当前密码相同");
@@ -87,7 +133,7 @@ public class PasswordResetService {
 
         int expectedSecurityVersion = user.getSecurityVersion() == null ? 0 : user.getSecurityVersion();
         int updated = userMapper.updatePasswordAndSecurityVersion(user.getId(),
-                passwordEncoder.encode(request.newPassword()), expectedSecurityVersion);
+                passwordEncoder.encode(newPassword), expectedSecurityVersion);
         if (updated != 1) {
             auditService.denied("AUTHENTICATION", "PASSWORD_RESET_REJECTED", "USER", user.getId(),
                     user.getCompanyId(), "密码重置时账户安全版本冲突");

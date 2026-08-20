@@ -47,11 +47,12 @@ class AuthServiceRegistrationTest {
                 verificationCodeService);
 
         service.register(new AuthDtos.RegisterRequest("candidate_new", "Password123", "新候选人",
-                "candidate@example.com", "13800138000", "123456"));
+                "", "13800138000", "123456"));
 
         ArgumentCaptor<UserAccount> captor = ArgumentCaptor.forClass(UserAccount.class);
         verify(userMapper).insert(captor.capture());
         assertNotNull(captor.getValue().getPhoneVerifiedAt());
         assertNull(captor.getValue().getEmailVerifiedAt());
+        assertNull(captor.getValue().getEmail());
     }
 }

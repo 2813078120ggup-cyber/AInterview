@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -284,7 +285,7 @@ public class InterviewService {
     @Transactional
     public Interview start(Long id) {
         Interview interview = requireInterview(id);
-        if (!(currentUser.id().equals(interview.getCandidateId()) || isManager())) throw BusinessException.forbidden("仅候选人或管理员可开始 AI 面试");
+        requireCandidateOwner(interview, "仅指定候选人可开始 AI 面试");
         requireStatus(interview, Interview.PENDING, "当前状态不允许开始");
         LocalDateTime now = LocalDateTime.now();
         if (now.isBefore(interview.getScheduledAt().minusMinutes(startWindowMinutes))
@@ -315,7 +316,7 @@ public class InterviewService {
     @Transactional
     public InterviewDtos.EndResponse end(Long id) {
         Interview interview = requireInterview(id);
-        if (!(currentUser.id().equals(interview.getCandidateId()) || isManager())) throw BusinessException.forbidden("仅候选人或管理员可结束 AI 面试");
+        requireCandidateOwner(interview, "仅指定候选人可结束 AI 面试");
         requireStatus(interview, Interview.IN_PROGRESS, "当前状态不允许结束");
         interview.setStatus(Interview.REPORT_GENERATING);
         interview.setEndedAt(LocalDateTime.now());
@@ -362,9 +363,7 @@ public class InterviewService {
     @Transactional
     public InterviewDtos.ProgressView updateProgress(Long interviewId, InterviewDtos.ProgressRequest request) {
         Interview interview = requireInterview(interviewId);
-        if (!currentUser.id().equals(interview.getCandidateId())) {
-            throw BusinessException.forbidden("仅候选人可更新面试进度");
-        }
+        requireCandidateOwner(interview, "仅指定候选人可更新面试进度");
         requireStatus(interview, Interview.IN_PROGRESS, "仅进行中的面试可更新进度");
         long questionCount = interviewQuestionMapper.selectCount(new LambdaQueryWrapper<InterviewQuestion>()
                 .eq(InterviewQuestion::getInterviewId, interviewId));
@@ -441,7 +440,7 @@ public class InterviewService {
     @Transactional
     public InterviewAnswer submitAnswer(Long interviewId, Long interviewQuestionId, InterviewDtos.AnswerRequest request) {
         Interview interview = requireInterview(interviewId);
-        if (!currentUser.id().equals(interview.getCandidateId())) throw BusinessException.forbidden("仅指定候选人可提交作答");
+        requireCandidateOwner(interview, "仅指定候选人可提交作答");
         requireStatus(interview, Interview.IN_PROGRESS, "面试未进行中，不能提交作答");
         if (!hasText(request.answerContent()) && !hasText(request.answerData()) && !hasText(request.audioUrl())) {
             throw BusinessException.badRequest("作答内容、结构化作答和音频地址不能同时为空");
@@ -587,6 +586,13 @@ public class InterviewService {
 
     private void requireManager() {
         if (!isManager()) throw BusinessException.forbidden("仅管理员可执行此操作");
+    }
+
+    private void requireCandidateOwner(Interview interview, String message) {
+        if (!currentUser.hasRole("CANDIDATE") || currentUser.hasRole("ADMIN") || currentUser.hasCompanyRole()
+                || !Objects.equals(currentUser.id(), interview.getCandidateId())) {
+            throw BusinessException.forbidden(message);
+        }
     }
 
     private boolean isManager() {

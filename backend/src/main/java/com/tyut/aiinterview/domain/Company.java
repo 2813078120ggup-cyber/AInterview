@@ -10,9 +10,11 @@ import lombok.Data;
 public class Company {
     private Long id;
     private String companyCode;
+    private String businessLicenseNo;
     private String name;
     private String shortName;
     private String logoUrl;
+    private String legalRepresentative;
     private String industry;
     private String companySize;
     private String city;

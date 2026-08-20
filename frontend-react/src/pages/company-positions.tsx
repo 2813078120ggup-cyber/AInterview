@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ResponsiveSelect, type ResponsiveSelectOption } from '@/components/ui/responsive-select'
 import { request } from '@/lib/api'
-import { appendQuery, formatDateTime, positionStatusMeta, salaryLabel, type PageResult, type RecruitmentJob } from '@/lib/recruitment'
+import { approvalStatusMeta, appendQuery, formatDateTime, positionStatusMeta, salaryLabel, type PageResult, type RecruitmentJob } from '@/lib/recruitment'
 
 type PositionFilters = {
   keyword: string
@@ -74,7 +74,7 @@ export function CompanyPositions() {
       <div>
         <p className="text-sm font-bold text-[var(--accent)]">招聘管理</p>
         <h1 className="mt-2 text-3xl font-black tracking-[-.04em]">岗位管理</h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">维护岗位内容、发布状态和候选人入口。所有状态变更均由服务端校验后生效。</p>
+        <p className="mt-2 max-w-2xl text-muted-foreground">HR 创建招聘需求并绑定编制、成本中心和预算；超级管理员批准后岗位才会发布。</p>
       </div>
       <Button onClick={() => navigate('/company/positions/new')}><Plus className="h-4 w-4" />新建岗位</Button>
     </header>
@@ -106,7 +106,7 @@ export function CompanyPositions() {
             <tbody className="divide-y divide-border">{items.records.map(job => <tr key={job.id} className="transition hover:bg-muted/30">
               <td className="px-5 py-4"><p className="font-bold">{job.name}</p><p className="mt-1 text-xs text-muted-foreground">{job.positionCode} · {job.department || '未设置部门'}</p></td>
               <td className="px-5 py-4 text-muted-foreground"><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{job.city || '地点面议'}</span><span className="mx-2 text-border">·</span><span className="font-semibold text-foreground">{salaryLabel(job)}</span></td>
-              <td className="px-5 py-4"><StatusBadge status={job.recruitmentStatus} /></td>
+              <td className="px-5 py-4"><div className="flex flex-wrap gap-2"><StatusBadge status={job.recruitmentStatus} /><ApprovalBadge job={job} /></div></td>
               <td className="px-5 py-4 text-muted-foreground">{formatDateTime(job.updatedAt)}</td>
               <td className="px-5 py-4 text-right"><Button type="button" variant="secondary" className="h-9 px-3" onClick={() => navigate(`/company/positions/${job.id}`)}>查看岗位</Button></td>
             </tr>)}</tbody>
@@ -114,7 +114,7 @@ export function CompanyPositions() {
         </div>
       </Card>
       <div className="grid gap-3 md:hidden">{items.records.map(job => <Card key={job.id} className="p-4">
-        <div className="flex items-start justify-between gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]"><BriefcaseBusiness className="h-5 w-5" /></span><StatusBadge status={job.recruitmentStatus} /></div>
+        <div className="flex items-start justify-between gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]"><BriefcaseBusiness className="h-5 w-5" /></span><div className="flex flex-wrap justify-end gap-2"><StatusBadge status={job.recruitmentStatus} /><ApprovalBadge job={job} /></div></div>
         <h2 className="mt-4 text-lg font-black">{job.name}</h2><p className="mt-1 text-xs text-muted-foreground">{job.positionCode} · {job.department || '未设置部门'}</p>
         <p className="mt-4 text-sm text-muted-foreground"><MapPin className="mr-1 inline h-4 w-4" />{job.city || '地点面议'}<span className="mx-2 text-border">·</span><strong className="text-foreground">{salaryLabel(job)}</strong></p>
         <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => navigate(`/company/positions/${job.id}`)}>查看岗位详情</Button>
@@ -130,6 +130,12 @@ function FilterInput({ label, value, onChange, placeholder }: { label: string; v
 
 function StatusBadge({ status }: { status: RecruitmentJob['recruitmentStatus'] }) {
   const meta = positionStatusMeta[status] || positionStatusMeta.DRAFT
+  return <Badge tone={meta.tone}>{meta.label}</Badge>
+}
+
+function ApprovalBadge({ job }: { job: RecruitmentJob }) {
+  if (job.frozen) return <Badge tone="danger">招聘冻结</Badge>
+  const meta = approvalStatusMeta[job.approvalStatus] || approvalStatusMeta.DRAFT
   return <Badge tone={meta.tone}>{meta.label}</Badge>
 }
 

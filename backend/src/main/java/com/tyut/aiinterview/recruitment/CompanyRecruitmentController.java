@@ -171,6 +171,12 @@ public class CompanyRecruitmentController {
         return ApiResponse.ok(service.updatePositionStatus(id, request));
     }
 
+    @PostMapping("/positions/{id}/submit-approval")
+    @PreAuthorize("@companyAccessService.hasPermission('recruitment:position:write')")
+    public ApiResponse<RecruitmentDtos.RequisitionView> submitPositionForApproval(@PathVariable Long id) {
+        return ApiResponse.ok(service.submitPositionForApproval(id));
+    }
+
     @GetMapping("/applications")
     @PreAuthorize("@companyAccessService.hasPermission('application:read')")
     public ApiResponse<PageResult<RecruitmentDtos.ApplicationView>> applications(RecruitmentDtos.ApplicationQuery query) {
@@ -269,6 +275,13 @@ public class CompanyRecruitmentController {
             @PathVariable Long id, @RequestParam(defaultValue = "1") Long pageNo,
             @RequestParam(defaultValue = "5") Long pageSize) {
         return ApiResponse.ok(service.companyMatchHistory(id, pageNo, pageSize));
+    }
+
+    @PostMapping("/applications/{id}/match/review")
+    @PreAuthorize("@companyAccessService.hasPermission('application:review')")
+    public ApiResponse<RecruitmentDtos.MatchEvaluationView> reviewMatch(
+            @PathVariable Long id, @Valid @RequestBody RecruitmentDtos.MatchReviewRequest request) {
+        return ApiResponse.ok(service.reviewCompanyMatch(id, request));
     }
 
     @PostMapping("/applications/{id}/ai-interview")

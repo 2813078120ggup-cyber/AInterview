@@ -384,8 +384,14 @@ test('桌面、平板和移动端浅色/深色、reduced motion、键盘抽屉�
 
 async function login(request: APIRequestContext, username: string): Promise<Session> {
   const password = username.startsWith('e2e_') ? PASSWORD : 'password'
+  const captchaCode = process.env.E2E_IMAGE_CAPTCHA_CODE?.trim()
+  if (!captchaCode) throw new Error('真实回归登录需要配置 E2E_IMAGE_CAPTCHA_CODE；前端不会在生产环境绕过图形验证码。')
   for (let attempt = 0; attempt < 7; attempt += 1) {
-    const response = await request.post('/api/v1/auth/login', { data: { username, password } })
+    const challengeResponse = await request.post('/api/v1/auth/captcha/challenge', { data: { purpose: 'PASSWORD_LOGIN' } })
+    const challengeBody = await challengeResponse.json() as { data?: { challengeId: string; imageDataUrl: string }; message?: string }
+    if (!challengeResponse.ok() || !challengeBody.data?.challengeId || !challengeBody.data.imageDataUrl) throw new Error(`登录 ${username} 获取图形验证码失败：${challengeResponse.status()} ${challengeBody.message ?? ''}`)
+    // Image captcha cannot be decoded safely in this API helper. The test environment must inject a known code; production has no bypass.
+    const response = await request.post('/api/v1/auth/login', { data: { username, password, captchaChallengeId: challengeBody.data.challengeId, captchaCode } })
     const body = await response.json() as { data: Session; message?: string }
     if (response.ok()) return body.data
     if (response.status() !== 429 || attempt === 6) throw new Error(`登录 ${username} 失败：${response.status()} ${body.message ?? ''}`)

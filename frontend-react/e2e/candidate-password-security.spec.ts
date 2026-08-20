@@ -3,6 +3,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 test.use({ video: 'off' })
 
 const profile = { id: '11', username: 'candidate_e2e', realName: '双设备候选人', roles: ['CANDIDATE'] }
+const transparentPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3MxZ5wAAAABJRU5ErkJggg=='
 
 async function establishSyntheticSession(context: BrowserContext, accessToken: string, refreshToken: string) {
   await context.addInitScript(({ accessToken, refreshToken, profile }) => {
@@ -15,6 +16,7 @@ async function establishSyntheticSession(context: BrowserContext, accessToken: s
 }
 
 async function mockWorkspaceShell(page: Page, mockProfile = false) {
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { data: profile } }))
   await page.route('**/api/v1/notifications/unread-count', route => route.fulfill({ json: { data: 0 } }))
   await page.route('**/api/v1/notifications**', route => route.fulfill({ json: { data: { records: [], total: 0, pageNo: 1, pageSize: 20 } } }))
   await page.route('**/api/v1/account/sessions', route => route.fulfill({ json: { data: [] } }))
@@ -73,6 +75,7 @@ test('password change rotates device A and rejects device B old access token', a
   await expect(pageB).toHaveURL(/\/login\?next=%2Fcandidate%2Fsettings%2Fprofile%3Fcontext%3Drecruitment$/)
   await expect.poll(() => pageB.evaluate(() => localStorage.getItem('access_token'))).toBeNull()
   await expect.poll(() => pageB.evaluate(() => localStorage.getItem('refresh_token'))).toBeNull()
+  await expect(pageB.getByRole('tab', { name: '密码登录', exact: true })).toBeVisible()
   expect(await pageB.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true)
   expect(await pageB.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
@@ -80,19 +83,33 @@ test('password change rotates device A and rejects device B old access token', a
   await deviceB.close()
 })
 
-test('forgot password dialog keeps non-sensitive inputs on validation errors', async ({ browser, baseURL }) => {
+test('forgot password keeps new-password inputs on local validation errors', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const page = await context.newPage()
+  await page.route('**/api/v1/auth/captcha/challenge', route => route.fulfill({
+    json: { data: { challengeId: 'reset-captcha', imageDataUrl: transparentPng, expiresInSeconds: 120 } },
+  }))
+  await page.route('**/api/v1/auth/password/reset/code', route => route.fulfill({
+    json: { data: { accepted: true, cooldownSeconds: 60, expiresInSeconds: 300, message: '若该联系方式可用于找回账户，验证码将发送至该联系方式' } },
+  }))
+  await page.route('**/api/v1/auth/password/reset/verify', route => route.fulfill({
+    json: { data: { resetToken: 'reset-ticket', expiresInSeconds: 600 } },
+  }))
   await page.goto(`${baseURL}/login`)
-  await page.getByRole('button', { name: '忘记密码？' }).click()
-  await page.getByLabel('已验证手机号').fill('13800000000')
-  await page.getByLabel('验证码').fill('123456')
-  await page.locator('#reset-password').fill('not valid')
-  await page.locator('#reset-confirm-password').fill('not valid')
-  await page.getByRole('button', { name: '重置密码' }).click()
-  await expect(page.getByRole('alert')).toContainText('新密码不符合规则')
-  await expect(page.getByLabel('已验证手机号')).toHaveValue('13800000000')
-  await expect(page.getByLabel('验证码')).toHaveValue('123456')
-  await expect(page.locator('#reset-password')).toHaveValue('not valid')
+  await page.getByRole('button', { name: '忘记密码', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '找回密码' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByLabel('手机号 / 邮箱').fill('13800000000')
+  await page.getByPlaceholder('图形验证码').fill('ABCD')
+  await page.getByRole('button', { name: '发送验证码', exact: true }).click()
+  await page.getByLabel('短信 / 邮箱验证码').fill('123456')
+  await page.getByRole('button', { name: '验证并继续' }).click()
+  await page.getByLabel('新密码', { exact: true }).fill('not valid')
+  await page.getByLabel('确认新密码', { exact: true }).fill('not valid')
+  await page.getByRole('button', { name: '保存新密码' }).click()
+  await expect(page.getByRole('alert')).toContainText('新密码须为 8-64 位')
+  await expect(page.getByLabel('新密码', { exact: true })).toHaveValue('not valid')
+  await expect(page.getByLabel('确认新密码', { exact: true })).toHaveValue('not valid')
   await context.close()
 })

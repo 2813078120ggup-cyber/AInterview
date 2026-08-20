@@ -20,6 +20,7 @@ async function establishSession(context: BrowserContext, accessToken: string, re
 }
 
 async function mockWorkspace(page: Page, mockProfile = false) {
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { data: profile } }))
   await page.route('**/api/v1/notifications/unread-count', route => route.fulfill({ json: { data: 0 } }))
   await page.route('**/api/v1/notifications**', route => route.fulfill({ json: { data: { records: [], total: 0, pageNo: 1, pageSize: 20 } } }))
   await page.route('**/api/v1/account/security-events**', route => route.fulfill({
@@ -115,7 +116,7 @@ test('revoking current device clears local credentials and failed revoke keeps l
 
   await page.getByRole('button', { name: '退出当前设备' }).click()
   await page.getByRole('button', { name: '确认退出' }).click()
-  await expect(page).toHaveURL(/\/login$/)
+  await expect(page).toHaveURL(url => url.pathname === '/login' && (url.search === '' || url.search === '?next=%2Fcandidate%2Fsettings%2Fsecurity'))
   await expect.poll(() => page.evaluate(() => localStorage.getItem('access_token'))).toBeNull()
   await expect.poll(() => page.evaluate(() => localStorage.getItem('refresh_token'))).toBeNull()
 

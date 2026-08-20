@@ -22,6 +22,9 @@ import com.tyut.aiinterview.mapper.CandidateResumeMapper;
 import com.tyut.aiinterview.mapper.JobApplicationMapper;
 import com.tyut.aiinterview.mapper.JobMatchEvaluationMapper;
 import com.tyut.aiinterview.mapper.JobPositionMapper;
+import com.tyut.aiinterview.governance.AiGovernanceException;
+import com.tyut.aiinterview.governance.RecruitmentAiGovernanceService;
+import com.tyut.aiinterview.governance.RecruitmentSensitiveDataRedactor;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -32,6 +35,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class RecruitmentJobMatchService {
@@ -48,11 +52,21 @@ public class RecruitmentJobMatchService {
     private final JobMatchEvaluationMapper evaluationMapper;
     private final DeepSeekGateway deepSeekGateway;
     private final ObjectMapper objectMapper;
+    private final RecruitmentAiGovernanceService governanceService;
 
     public RecruitmentJobMatchService(JobApplicationMapper applicationMapper, JobPositionMapper positionMapper,
                                       CandidateResumeMapper resumeMapper, CandidateResumeAnalysisMapper analysisMapper,
                                       JobMatchEvaluationMapper evaluationMapper, DeepSeekGateway deepSeekGateway,
                                       ObjectMapper objectMapper) {
+        this(applicationMapper, positionMapper, resumeMapper, analysisMapper, evaluationMapper, deepSeekGateway,
+                objectMapper, null);
+    }
+
+    @Autowired
+    public RecruitmentJobMatchService(JobApplicationMapper applicationMapper, JobPositionMapper positionMapper,
+                                      CandidateResumeMapper resumeMapper, CandidateResumeAnalysisMapper analysisMapper,
+                                      JobMatchEvaluationMapper evaluationMapper, DeepSeekGateway deepSeekGateway,
+                                      ObjectMapper objectMapper, RecruitmentAiGovernanceService governanceService) {
         this.applicationMapper = applicationMapper;
         this.positionMapper = positionMapper;
         this.resumeMapper = resumeMapper;
@@ -60,6 +74,7 @@ public class RecruitmentJobMatchService {
         this.evaluationMapper = evaluationMapper;
         this.deepSeekGateway = deepSeekGateway;
         this.objectMapper = objectMapper;
+        this.governanceService = governanceService;
     }
 
     public String process(AiTask task) {
@@ -87,14 +102,34 @@ public class RecruitmentJobMatchService {
             CandidateResumeAnalysis analysis = latestSuccess(resume.getId(), currentVersion);
             String profile = analysis == null ? blankToDefault(resume.getSummary(), "未形成结构化画像") : analysis.getProfileJson();
             String resumeText = analysis == null ? resumeFacts(resume) : analysis.getExtractedText();
+            RecruitmentSensitiveDataRedactor.Result profileRedaction = prepareJson(application.getCompanyId(), profile);
+            RecruitmentSensitiveDataRedactor.Result resumeRedaction = prepareText(application.getCompanyId(), resumeText);
+            RecruitmentSensitiveDataRedactor.Result descriptionRedaction = prepareText(application.getCompanyId(), position.getDescription());
+            RecruitmentSensitiveDataRedactor.Result requirementsRedaction = prepareText(application.getCompanyId(), position.getRequirements());
+            String redactionSummary = redactionSummary(profileRedaction, resumeRedaction, descriptionRedaction, requirementsRedaction);
             JobMatchEvaluation evaluation = startEvaluation(application, position, resume, analysis,
-                    currentVersion, currentEvaluationVersion, task.getId(), profile);
+                    currentVersion, currentEvaluationVersion, task.getId(), profileRedaction.value());
+            if (evaluation != null) {
+                evaluation.setRedactionVersion(RecruitmentSensitiveDataRedactor.VERSION);
+                evaluation.setRedactionSummary(redactionSummary);
+                evaluationMapper.updateById(evaluation);
+            }
             RuleScore ruleScore = calculateRuleScore(position, resume);
             DeepSeekGateway.Generated<JsonNode> generated = deepSeekGateway.matchResumeToJob(
-                    position.getName(), position.getDescription(), position.getRequirements(), position.getSkillTags(),
-                    profile, resume.getSkills(), resumeText,
-                    new AiGenerationContext(task.getId(), null, null, "RECRUITMENT_JOB_MATCH", task.getCreatedBy()));
-            JsonNode result = validate(generated.content());
+                    position.getName(), descriptionRedaction.value(), requirementsRedaction.value(), position.getSkillTags(),
+                    profileRedaction.value(), resume.getSkills(), resumeRedaction.value(),
+                     AiGenerationContext.recruitment(task.getId(), null, "RECRUITMENT_JOB_MATCH",
+                             task.getCreatedBy(), application.getCompanyId()));
+            RecruitmentSensitiveDataRedactor.Result outputRedaction = prepareJson(application.getCompanyId(),
+                    generated.content().toString());
+            JsonNode result = validate(tree(outputRedaction.value()));
+            if (outputRedaction.detected()) {
+                redactionSummary = trim(redactionSummary + "；模型输出：" + outputRedaction.summary(), 500);
+                if (evaluation != null) {
+                    evaluation.setRedactionSummary(redactionSummary);
+                    evaluationMapper.updateById(evaluation);
+                }
+            }
             applySuccess(application, evaluation, currentVersion, currentEvaluationVersion, ruleScore, result, generated);
             return output(applicationId, currentVersion, currentEvaluationVersion, application.getMatchScore(), false);
         } catch (RuntimeException exception) {
@@ -181,6 +216,14 @@ public class RecruitmentJobMatchService {
             evaluation.setEvidence(write(normalizeList(result.path("evidence"))));
             evaluation.setRecommendation(trim(result.path("recommendation").asText("建议人工复核"), 80));
             evaluation.setConfidence(confidence(result.path("confidence").asText("MEDIUM")));
+            boolean reviewRequired = governanceService == null || governanceService.requiresHumanReview(
+                    application.getCompanyId(), finalScore, evaluation.getConfidence());
+            evaluation.setHumanReviewRequired(reviewRequired ? 1 : 0);
+            evaluation.setHumanReviewStatus(reviewRequired ? "PENDING" : "NOT_REQUIRED");
+            evaluation.setHumanReviewDecision(null);
+            evaluation.setHumanReviewNote(null);
+            evaluation.setHumanReviewedBy(null);
+            evaluation.setHumanReviewedAt(null);
             evaluation.setProviderName(blankToDefault(generated.providerCode(), "deepseek"));
             evaluation.setModelName(generated.model());
             evaluation.setPromptVersion(generated.promptVersion());
@@ -399,6 +442,7 @@ public class RecruitmentJobMatchService {
     }
 
     private String safeError(RuntimeException exception) {
+        if (exception instanceof AiGovernanceException) return trim(exception.getMessage(), 300);
         if (exception instanceof BusinessException) {
             return trim(exception.getMessage(), 300);
         }
@@ -420,4 +464,26 @@ public class RecruitmentJobMatchService {
     private static int value(Integer value) { return value == null ? 0 : value; }
     private static String blankToDefault(String value, String fallback) { return StringUtils.hasText(value) ? value : fallback; }
     private static String trim(String value, int max) { return value == null ? null : value.length() <= max ? value : value.substring(0, max); }
+
+    private RecruitmentSensitiveDataRedactor.Result prepareText(Long companyId, String value) {
+        if (governanceService != null) return governanceService.prepareSensitiveInput(companyId, value);
+        return new RecruitmentSensitiveDataRedactor.Result(value, List.of(), 0, RecruitmentSensitiveDataRedactor.VERSION);
+    }
+
+    private RecruitmentSensitiveDataRedactor.Result prepareJson(Long companyId, String value) {
+        if (governanceService != null) return governanceService.prepareSensitiveJson(companyId, value);
+        return new RecruitmentSensitiveDataRedactor.Result(value, List.of(), 0, RecruitmentSensitiveDataRedactor.VERSION);
+    }
+
+    private String redactionSummary(RecruitmentSensitiveDataRedactor.Result... results) {
+        int count = 0;
+        Set<String> categories = new java.util.LinkedHashSet<>();
+        for (RecruitmentSensitiveDataRedactor.Result result : results) {
+            if (result == null) continue;
+            count += result.replacementCount();
+            categories.addAll(result.categories());
+        }
+        return count == 0 ? "未检测到需脱敏字段（" + RecruitmentSensitiveDataRedactor.VERSION + "）"
+                : trim("已处理 " + count + " 处敏感字段（" + String.join("、", categories) + "）", 500);
+    }
 }

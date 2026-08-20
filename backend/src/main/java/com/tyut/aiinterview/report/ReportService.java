@@ -121,7 +121,10 @@ public class ReportService {
                 report.getWeaknesses(), report.getImprovementSuggestions(), report.getStatus(), report.getGeneratedAt(), report.getPublishedAt(),
                 questionCount, reliabilityWarning(questionCount),
                 Integer.valueOf(1).equals(report.getStatus()) ? "PUBLISHED" : "READY", null, null, null,
-                false, List.of(), null);
+                false, List.of(), null,
+                Integer.valueOf(1).equals(report.getHumanReviewRequired()), report.getHumanReviewStatus(),
+                report.getHumanReviewDecision(), report.getHumanReviewNote(), report.getHumanReviewedBy(),
+                report.getHumanReviewedAt());
     }
 
     private ReportDtos.ReportDetail toReportDetail(Report report, Long interviewId) {

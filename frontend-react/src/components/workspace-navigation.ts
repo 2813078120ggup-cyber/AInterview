@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CalendarRange,
   ClipboardList,
+  ClipboardCheck,
   Code2,
   FileCode2,
   FileText,
@@ -16,8 +17,10 @@ import {
   LayoutDashboard,
   MessageSquareWarning,
   NotebookPen,
+  Palette,
   Radar,
   Settings2,
+  ShieldCheck,
   UserCog,
   UserRound,
   UsersRound,
@@ -103,7 +106,7 @@ const companyDomains: WorkspaceDomain[] = [
   {
     key: 'recruitment', label: '招聘', description: '岗位与候选人管理', path: '/company/positions',
     items: [
-      { path: '/company/positions', label: '岗位管理', description: '维护岗位内容与发布状态', icon: BriefcaseBusiness },
+      { path: '/company/positions', label: '岗位管理', description: '创建岗位并提交招聘审批', icon: BriefcaseBusiness },
       { path: '/company/applications', label: '申请管理', description: '处理候选人申请与阶段推进', icon: ClipboardList },
       { path: '/company/talent-pool', label: '人才库', description: '维护候选人和协作记录', icon: UsersRound },
     ],
@@ -152,6 +155,7 @@ const adminDomains: WorkspaceDomain[] = [
   {
     key: 'business', label: '业务', description: '招聘与面试运营', path: '/admin/interviews',
     items: [
+      { path: '/admin/recruitment/requisitions', label: '招聘审批', description: '审核编制、成本中心与招聘预算', icon: ClipboardCheck },
       { path: '/admin/recruitment', label: '招聘运营', description: '定位跨企业招聘异常', icon: Radar },
       { path: '/admin/interviews', label: '面试运营', description: '安排、回顾与报告', icon: CalendarDays },
     ],
@@ -168,6 +172,7 @@ const adminDomains: WorkspaceDomain[] = [
     key: 'ai', label: 'AI', description: '模型服务与生成规则', path: '/admin/ai-operations',
     items: [
       { path: '/admin/ai-operations', label: 'AI 服务概览', description: '查看模型服务和任务状态', icon: Bot },
+      { path: '/admin/ai-governance', label: '招聘 AI 治理', description: '评测门禁、预算与紧急停用', icon: ShieldCheck },
       { path: '/admin/prompt-templates', label: '生成规则版本', description: '管理模型生成规则', icon: FileCode2 },
       { path: '/admin/ai-generations', label: '模型调用记录', description: '查看模型调用与结果状态', icon: Activity },
     ],
@@ -177,6 +182,7 @@ const adminDomains: WorkspaceDomain[] = [
     items: [
       { path: '/admin/operations', label: '运行状态', description: '查看服务状态与处理建议', icon: Activity },
       { path: '/admin/settings', label: '平台设置', description: '维护平台基础配置', icon: Settings2 },
+      { path: '/admin/theme-settings', label: '主题设置', description: '管理全局交互动效偏好', icon: Palette },
       { path: '/admin/tickets', label: '服务工单', description: '处理用户服务请求', icon: MessageSquareWarning },
       { path: '/admin/audit-logs', label: '操作审计', description: '追踪平台关键操作', icon: History },
     ],

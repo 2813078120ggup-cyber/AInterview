@@ -13,6 +13,8 @@ public class CandidateResumeAnalysis {
     private Long aiTaskId;
     private String status;
     private String extractorVersion;
+    private String redactionVersion;
+    private String redactionSummary;
     private String extractedText;
     private String profileJson;
     private String errorMessage;

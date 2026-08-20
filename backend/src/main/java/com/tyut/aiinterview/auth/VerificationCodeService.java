@@ -79,8 +79,9 @@ public class VerificationCodeService {
     }
 
     public void sendLoginCode(AuthDtos.SendLoginCodeRequest request) {
-        String channel = normalizeChannel(request.channel());
-        String target = normalizeLoginTarget(channel, request.target());
+        LoginTarget loginTarget = resolveLoginTarget(request.target());
+        String channel = loginTarget.channel();
+        String target = loginTarget.target();
         String cooldownKey = loginCooldownKey(channel, target);
         Boolean allowed = redisTemplate.opsForValue().setIfAbsent(cooldownKey, "1",
                 properties.getCooldown().toSeconds(), TimeUnit.SECONDS);
@@ -104,8 +105,9 @@ public class VerificationCodeService {
     }
 
     public void verifyLoginCode(String channel, String target, String code) {
-        String normalizedChannel = normalizeChannel(channel);
-        String normalizedTarget = normalizeLoginTarget(normalizedChannel, target);
+        LoginTarget loginTarget = resolveLoginTarget(target);
+        String normalizedChannel = loginTarget.channel();
+        String normalizedTarget = loginTarget.target();
         if (!StringUtils.hasText(code)) throw BusinessException.badRequest("请输入验证码");
         if (!consumeCode(loginCodeKey(normalizedChannel, normalizedTarget), code)) {
             throw BusinessException.badRequest("验证码错误或已过期");
@@ -328,6 +330,16 @@ public class VerificationCodeService {
         return email;
     }
 
+    /** Login-code channel is derived from the target; request.channel is legacy compatibility only. */
+    private static LoginTarget resolveLoginTarget(String target) {
+        String normalized = StringUtils.hasText(target) ? target.trim() : "";
+        if (normalized.matches("^1\\d{10}$")) return new LoginTarget("sms", normalizePhone(normalized));
+        if (normalized.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            return new LoginTarget("email", normalizeEmail(normalized));
+        }
+        throw BusinessException.badRequest("手机号或邮箱格式不正确");
+    }
+
     public static String normalizePhone(String value) {
         String normalized = StringUtils.hasText(value) ? value.trim() : "";
         if (!normalized.matches("^1\\d{10}$")) {
@@ -402,4 +414,5 @@ public class VerificationCodeService {
 
     public record ChangeCodeResult(long cooldownSeconds, long expiresInSeconds) {}
     public record PasswordResetCodeResult(long cooldownSeconds, long expiresInSeconds) {}
+    private record LoginTarget(String channel, String target) {}
 }

@@ -13,6 +13,8 @@ import static org.mockito.Mockito.when;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.domain.Company;
 import com.tyut.aiinterview.domain.JobPosition;
+import com.tyut.aiinterview.domain.RecruitmentRequisition;
+import com.tyut.aiinterview.domain.RecruitmentRequisitionEvent;
 import com.tyut.aiinterview.mapper.CandidateResumeMapper;
 import com.tyut.aiinterview.mapper.CompanyMapper;
 import com.tyut.aiinterview.mapper.CompanyPositionStatisticsRow;
@@ -23,6 +25,8 @@ import com.tyut.aiinterview.mapper.JobMatchEvaluationMapper;
 import com.tyut.aiinterview.mapper.JobPositionMapper;
 import com.tyut.aiinterview.mapper.OfflineInterviewMapper;
 import com.tyut.aiinterview.mapper.QuestionBankMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionEventMapper;
+import com.tyut.aiinterview.mapper.RecruitmentRequisitionMapper;
 import com.tyut.aiinterview.mapper.UserMapper;
 import com.tyut.aiinterview.ai.AiTaskService;
 import com.tyut.aiinterview.interview.InterviewService;
@@ -47,6 +51,8 @@ class RecruitmentPositionServiceTest {
     private final UserMapper userMapper = mock(UserMapper.class);
     private final InterviewMapper interviewMapper = mock(InterviewMapper.class);
     private final QuestionBankMapper questionBankMapper = mock(QuestionBankMapper.class);
+    private final RecruitmentRequisitionMapper requisitionMapper = mock(RecruitmentRequisitionMapper.class);
+    private final RecruitmentRequisitionEventMapper requisitionEventMapper = mock(RecruitmentRequisitionEventMapper.class);
     private final InterviewService interviewService = mock(InterviewService.class);
     private final SiteNotificationService notificationService = mock(SiteNotificationService.class);
     private final CurrentUser currentUser = mock(CurrentUser.class);
@@ -61,9 +67,10 @@ class RecruitmentPositionServiceTest {
         service = new RecruitmentService(positionMapper, companyMapper, applicationMapper, resumeMapper,
                 matchEvaluationMapper, historyMapper, offlineInterviewMapper, userMapper, interviewMapper,
                 questionBankMapper, interviewService, notificationService, currentUser, new ObjectMapper(),
-                taskService, companyAccess, statusService, auditService);
+                taskService, companyAccess, statusService, auditService, requisitionMapper, requisitionEventMapper);
         when(currentUser.id()).thenReturn(900L);
         when(companyAccess.requireActiveCompany(100L)).thenReturn(activeCompany(100L));
+        when(requisitionEventMapper.selectList(any())).thenReturn(List.of());
     }
 
     @Test
@@ -82,6 +89,7 @@ class RecruitmentPositionServiceTest {
     @Test
     void editCannotChangeStatusThroughContentRequest() {
         JobPosition position = position("DRAFT");
+        when(requisitionMapper.selectOne(any())).thenReturn(requisition("DRAFT"));
         when(companyAccess.requirePermission("recruitment:position:write")).thenReturn(100L);
         when(companyAccess.requirePosition(1L)).thenReturn(position);
 
@@ -94,7 +102,7 @@ class RecruitmentPositionServiceTest {
     }
 
     @Test
-    void publishRejectsIncompleteDraftBeforeDatabaseUpdate() {
+    void companyCannotPublishEvenWhenDraftIsIncomplete() {
         JobPosition position = position("DRAFT");
         position.setDescription(null);
         when(companyAccess.requirePermission(anyString())).thenReturn(100L);
@@ -103,23 +111,41 @@ class RecruitmentPositionServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.updatePositionStatus(1L, new RecruitmentDtos.PositionStatusRequest("PUBLISHED", null)));
 
-        assertEquals("发布前请补充岗位介绍", exception.getMessage());
+        assertEquals("岗位必须提交招聘需求，并由超级管理员批准后自动发布", exception.getMessage());
         verify(positionMapper, never()).updateById(any(JobPosition.class));
     }
 
     @Test
-    void publishAndCloseAreExplicitStatusActions() {
+    void companyCanClosePublishedPositionButCannotPublishDirectly() {
         JobPosition position = position("DRAFT");
         when(companyAccess.requirePermission(anyString())).thenReturn(100L);
         when(companyAccess.requirePosition(1L)).thenReturn(position);
 
-        service.updatePositionStatus(1L, new RecruitmentDtos.PositionStatusRequest("PUBLISHED", null));
-        assertEquals("PUBLISHED", position.getRecruitmentStatus());
+        assertThrows(BusinessException.class,
+                () -> service.updatePositionStatus(1L, new RecruitmentDtos.PositionStatusRequest("PUBLISHED", null)));
+        position.setRecruitmentStatus("PUBLISHED");
         service.updatePositionStatus(1L, new RecruitmentDtos.PositionStatusRequest("CLOSED", "招聘计划已完成"));
         assertEquals("CLOSED", position.getRecruitmentStatus());
-        verify(positionMapper, org.mockito.Mockito.times(2)).updateById(any(JobPosition.class));
-        verify(auditService).recordPositionOperation("POSITION_STATUS_CHANGED", 100L, 1L, "POS-1", "DRAFT -> PUBLISHED");
+        verify(positionMapper).updateById(any(JobPosition.class));
         verify(auditService).recordPositionOperation("POSITION_STATUS_CHANGED", 100L, 1L, "POS-1", "PUBLISHED -> CLOSED; 招聘计划已完成");
+    }
+
+    @Test
+    void submitLocksDraftForSuperAdminApproval() {
+        JobPosition position = position("DRAFT");
+        RecruitmentRequisition requisition = requisition("DRAFT");
+        when(companyAccess.requirePermission("recruitment:position:write")).thenReturn(100L);
+        when(companyAccess.requirePosition(1L)).thenReturn(position);
+        when(requisitionMapper.selectOne(any())).thenReturn(requisition);
+        when(requisitionMapper.update(any(), any())).thenReturn(1);
+
+        RecruitmentDtos.RequisitionView result = service.submitPositionForApproval(1L);
+
+        assertEquals("PENDING_APPROVAL", result.approvalStatus());
+        assertEquals(900L, result.submittedBy());
+        verify(requisitionEventMapper).insert(any(RecruitmentRequisitionEvent.class));
+        verify(auditService).recordPositionOperation("REQUISITION_SUBMITTED", 100L, 1L, "POS-1",
+                "requisitionNo=REQ-1");
     }
 
     @Test
@@ -144,6 +170,7 @@ class RecruitmentPositionServiceTest {
         when(companyAccess.requirePermission("recruitment:position:read")).thenReturn(100L);
         when(companyAccess.requirePosition(1L)).thenReturn(position);
         when(positionMapper.selectCompanyStatistics(100L, 1L)).thenReturn(row);
+        when(requisitionMapper.selectOne(any())).thenReturn(requisition("APPROVED"));
 
         RecruitmentDtos.PositionDetail result = service.companyPositionDetail(1L);
 
@@ -156,7 +183,9 @@ class RecruitmentPositionServiceTest {
     private RecruitmentDtos.PositionRequest request(String status) {
         return new RecruitmentDtos.PositionRequest("POS-1", "Java 工程师", "研发部", 15, 25, "太原",
                 "3-5年", "本科及以上", "FULL_TIME", "负责后端研发", "熟悉 Java 和 Spring Boot",
-                List.of("Java", "Spring Boot"), status, LocalDateTime.now().plusDays(30));
+                List.of("Java", "Spring Boot"), status, LocalDateTime.now().plusDays(30),
+                new RecruitmentDtos.RequisitionRequest("HC-2026-001", 2, "CC-RD", "研发成本中心",
+                        new BigDecimal("50000.00"), "CNY", "补充核心研发岗位"));
     }
 
     private JobPosition position(String status) {
@@ -181,5 +210,22 @@ class RecruitmentPositionServiceTest {
         company.setName("企业");
         company.setStatus(1);
         return company;
+    }
+
+    private RecruitmentRequisition requisition(String status) {
+        RecruitmentRequisition requisition = new RecruitmentRequisition();
+        requisition.setId(10L);
+        requisition.setPositionId(1L);
+        requisition.setCompanyId(100L);
+        requisition.setRequisitionNo("REQ-1");
+        requisition.setHeadcountCode("HC-1");
+        requisition.setRequestedHeadcount(2);
+        requisition.setCostCenterCode("CC-RD");
+        requisition.setBudgetAmount(new BigDecimal("50000.00"));
+        requisition.setBudgetCurrency("CNY");
+        requisition.setBusinessJustification("补充核心研发岗位");
+        requisition.setApprovalStatus(status);
+        requisition.setFrozen(0);
+        return requisition;
     }
 }

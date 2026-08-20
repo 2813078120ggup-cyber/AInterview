@@ -76,9 +76,11 @@ app:
     enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
     login-per-minute: ${AUTH_RATE_LIMIT_LOGIN_PER_MINUTE:10}
     register-per-minute: ${AUTH_RATE_LIMIT_REGISTER_PER_MINUTE:5}
+    company-register-per-minute: ${AUTH_RATE_LIMIT_COMPANY_REGISTER_PER_MINUTE:3}
     code-send-per-minute: ${AUTH_RATE_LIMIT_CODE_SEND_PER_MINUTE:3}
     code-send-per-day: ${AUTH_RATE_LIMIT_CODE_SEND_PER_DAY:20}
     login-code-per-minute: ${AUTH_RATE_LIMIT_LOGIN_CODE_PER_MINUTE:10}
+    captcha-challenge-per-minute: ${AUTH_RATE_LIMIT_CAPTCHA_CHALLENGE_PER_MINUTE:20}
   algorithm:
     judge:
       enabled: ${ALGORITHM_JUDGE_ENABLED:true}
@@ -117,6 +119,9 @@ app:
     worker-queue-capacity: ${AI_TASK_WORKER_QUEUE_CAPACITY:50}
     report-scoring-concurrency: ${REPORT_SCORING_CONCURRENCY:3}
     report-scoring-queue-capacity: ${REPORT_SCORING_QUEUE_CAPACITY:50}
+  ai-governance:
+    evaluation-concurrency: ${AI_GOVERNANCE_EVALUATION_CONCURRENCY:1}
+    evaluation-queue-capacity: ${AI_GOVERNANCE_EVALUATION_QUEUE_CAPACITY:5}
   deepseek:
     enabled: ${DEEPSEEK_ENABLED:true}
     api-key: ${DEEPSEEK_API_KEY:}
@@ -133,6 +138,14 @@ app:
     sms-template-id: ${REGISTER_SMS_TEMPLATE_ID:CST_ptdie100}
     mail-from: ${MAIL_FROM:${MAIL_USERNAME:}}
     mail-subject: ${REGISTER_CODE_MAIL_SUBJECT:注册验证码}
+  image-captcha:
+    challenge-ttl: ${IMAGE_CAPTCHA_CHALLENGE_TTL:2m}
+    width: ${IMAGE_CAPTCHA_WIDTH:240}
+    height: ${IMAGE_CAPTCHA_HEIGHT:88}
+    min-length: ${IMAGE_CAPTCHA_MIN_LENGTH:4}
+    max-length: ${IMAGE_CAPTCHA_MAX_LENGTH:4}
+    # Test-only override. Keep unset in production so answers remain random.
+    fixed-code: ${IMAGE_CAPTCHA_FIXED_CODE:}
 
 resilience4j:
   circuitbreaker:

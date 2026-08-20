@@ -96,6 +96,7 @@ class InterviewServiceProgressTest {
                 answerMapper, currentUser, recordingService);
         Interview interview = inProgressInterview();
         when(currentUser.id()).thenReturn(7L);
+        when(currentUser.hasRole("CANDIDATE")).thenReturn(true);
         when(interviewMapper.selectById(11L)).thenReturn(interview);
         when(questionMapper.selectCount(any())).thenReturn(3L);
         when(recordingService.requiresSequentialMode(11L)).thenReturn(true);
@@ -120,6 +121,7 @@ class InterviewServiceProgressTest {
         currentQuestion.setId(21L);
         currentQuestion.setInterviewId(11L);
         when(currentUser.id()).thenReturn(7L);
+        when(currentUser.hasRole("CANDIDATE")).thenReturn(true);
         when(interviewMapper.selectById(11L)).thenReturn(interview);
         when(questionMapper.selectCount(any())).thenReturn(2L);
         when(questionMapper.selectOne(any())).thenReturn(currentQuestion);

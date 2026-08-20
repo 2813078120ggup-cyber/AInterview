@@ -11,7 +11,9 @@ public interface CompanyDashboardMapper {
     @Select("""
             SELECT c.id AS company_id, c.name AS company_name, c.short_name AS company_short_name, c.city,
                    (SELECT COUNT(*) FROM job_position p
-                    WHERE p.company_id = c.id AND p.status = 1 AND p.recruitment_status = 'PUBLISHED') AS published_positions,
+                    WHERE p.company_id = c.id AND p.status = 1 AND p.recruitment_status = 'PUBLISHED'
+                      AND EXISTS (SELECT 1 FROM recruitment_requisition r
+                                  WHERE r.position_id = p.id AND r.approval_status = 'APPROVED' AND r.frozen = 0)) AS published_positions,
                    (SELECT COUNT(*) FROM job_position p
                     WHERE p.company_id = c.id AND p.status = 1 AND p.recruitment_status = 'DRAFT') AS draft_positions,
                    (SELECT COUNT(*) FROM job_application a WHERE a.company_id = c.id) AS total_applications,

@@ -35,9 +35,12 @@ public final class ReportDtos {
                                       String improvementSuggestions, Integer status,
                                       LocalDateTime generatedAt, LocalDateTime publishedAt, long questionCount,
                                       String reliabilityWarning, String reportStatus, String taskStatus,
-                                      Integer taskAttempts, String taskMessage, boolean canRetry,
-                                      List<CompanyQuestionReview> questionReviews,
-                                      RecordingDtos.RecordingView recording) {
+                                       Integer taskAttempts, String taskMessage, boolean canRetry,
+                                       List<CompanyQuestionReview> questionReviews,
+                                       RecordingDtos.RecordingView recording,
+                                       boolean humanReviewRequired, String humanReviewStatus,
+                                       String humanReviewDecision, String humanReviewNote,
+                                       Long humanReviewedBy, LocalDateTime humanReviewedAt) {
     }
 
     public record CompanyQuestionReview(Long id, Integer sequenceNo, String question, String questionType,

@@ -118,6 +118,12 @@ public class CompanyReportReviewService {
         Report report = findReport(interview.getId());
         if (report == null) throw BusinessException.notFound("报告尚未生成");
         if (!Integer.valueOf(1).equals(report.getStatus())) {
+            report.setHumanReviewRequired(1);
+            report.setHumanReviewStatus("APPROVED");
+            report.setHumanReviewDecision("PUBLISH");
+            report.setHumanReviewNote("已由企业复核并发布给候选人");
+            report.setHumanReviewedBy(currentUser.id());
+            report.setHumanReviewedAt(LocalDateTime.now());
             report.setStatus(1);
             report.setPublishedAt(LocalDateTime.now());
             reportMapper.updateById(report);
@@ -135,7 +141,8 @@ public class CompanyReportReviewService {
     private ReportDtos.CompanyReportDetail notAvailable(Long applicationId) {
         return new ReportDtos.CompanyReportDetail(applicationId, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, 0, null,
-                "NOT_AVAILABLE", null, null, "当前申请尚未关联 AI 面试。", false, List.of(), null);
+                "NOT_AVAILABLE", null, null, "当前申请尚未关联 AI 面试。", false, List.of(), null,
+                false, "NOT_REQUIRED", null, null, null, null);
     }
 
     private ReportDtos.CompanyReportDetail toDetail(Long applicationId, Interview interview, Report report,
@@ -170,7 +177,13 @@ public class CompanyReportReviewService {
                 report == null ? null : report.getPublishedAt(), questions.size(),
                 ReportService.reliabilityWarning(questions.size()), reportStatus,
                 task == null ? null : task.getStatus(), task == null ? null : task.getAttempts(),
-                taskMessage, canRetry, reviews, recording);
+                taskMessage, canRetry, reviews, recording,
+                report != null && Integer.valueOf(1).equals(report.getHumanReviewRequired()),
+                report == null ? null : report.getHumanReviewStatus(),
+                report == null ? null : report.getHumanReviewDecision(),
+                report == null ? null : report.getHumanReviewNote(),
+                report == null ? null : report.getHumanReviewedBy(),
+                report == null ? null : report.getHumanReviewedAt());
     }
 
     private List<InterviewQuestion> questions(Long interviewId) {

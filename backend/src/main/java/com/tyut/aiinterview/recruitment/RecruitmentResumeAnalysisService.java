@@ -12,6 +12,9 @@ import com.tyut.aiinterview.domain.CandidateResume;
 import com.tyut.aiinterview.domain.CandidateResumeAnalysis;
 import com.tyut.aiinterview.domain.MediaFile;
 import com.tyut.aiinterview.freeinterview.ResumeTextExtractor;
+import com.tyut.aiinterview.governance.AiGovernanceException;
+import com.tyut.aiinterview.governance.RecruitmentAiGovernanceService;
+import com.tyut.aiinterview.governance.RecruitmentSensitiveDataRedactor;
 import com.tyut.aiinterview.mapper.CandidateResumeAnalysisMapper;
 import com.tyut.aiinterview.mapper.CandidateResumeMapper;
 import com.tyut.aiinterview.mapper.MediaFileMapper;
@@ -24,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class RecruitmentResumeAnalysisService {
@@ -40,12 +44,24 @@ public class RecruitmentResumeAnalysisService {
     private final DeepSeekGateway deepSeekGateway;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final RecruitmentAiGovernanceService governanceService;
 
     public RecruitmentResumeAnalysisService(CandidateResumeMapper resumeMapper,
                                              CandidateResumeAnalysisMapper analysisMapper,
                                              MediaFileMapper mediaMapper, LocalObjectStorage storage,
                                              ResumeTextExtractor extractor, DeepSeekGateway deepSeekGateway,
                                              ObjectMapper objectMapper, ApplicationEventPublisher eventPublisher) {
+        this(resumeMapper, analysisMapper, mediaMapper, storage, extractor, deepSeekGateway, objectMapper,
+                eventPublisher, null);
+    }
+
+    @Autowired
+    public RecruitmentResumeAnalysisService(CandidateResumeMapper resumeMapper,
+                                             CandidateResumeAnalysisMapper analysisMapper,
+                                             MediaFileMapper mediaMapper, LocalObjectStorage storage,
+                                             ResumeTextExtractor extractor, DeepSeekGateway deepSeekGateway,
+                                             ObjectMapper objectMapper, ApplicationEventPublisher eventPublisher,
+                                             RecruitmentAiGovernanceService governanceService) {
         this.resumeMapper = resumeMapper;
         this.analysisMapper = analysisMapper;
         this.mediaMapper = mediaMapper;
@@ -54,6 +70,7 @@ public class RecruitmentResumeAnalysisService {
         this.deepSeekGateway = deepSeekGateway;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.governanceService = governanceService;
     }
 
     public String process(AiTask task) {
@@ -77,10 +94,16 @@ public class RecruitmentResumeAnalysisService {
             } catch (IOException exception) {
                 throw new IllegalStateException("读取简历文件失败", exception);
             }
-            DeepSeekGateway.Generated<JsonNode> generated = deepSeekGateway.analyzeResume(extractedText, null,
-                    new AiGenerationContext(task.getId(), null, null, "RECRUITMENT_RESUME_ANALYSIS", task.getCreatedBy()));
-            JsonNode profile = validateProfile(generated.content());
-            applySuccess(resume, analysis, extractedText, profile);
+            RecruitmentSensitiveDataRedactor.Result redaction = governanceService == null
+                    ? new RecruitmentSensitiveDataRedactor.Result(extractedText, List.of(), 0,
+                            RecruitmentSensitiveDataRedactor.VERSION)
+                    : governanceService.prepareSensitiveInput(null, extractedText);
+            DeepSeekGateway.Generated<JsonNode> generated = deepSeekGateway.analyzeResume(redaction.value(), null,
+                    AiGenerationContext.recruitment(task.getId(), null, "RECRUITMENT_RESUME_ANALYSIS",
+                            task.getCreatedBy(), null));
+            JsonNode profile = validateProfile(governanceService == null ? generated.content()
+                    : tree(governanceService.prepareSensitiveJson(null, generated.content().toString()).value()));
+            applySuccess(resume, analysis, redaction.value(), profile, redaction);
             eventPublisher.publishEvent(new ResumeParseCompletedEvent(resumeId, analysis.getAnalysisVersion(), true, null));
             return output(resumeId, analysisId, false);
         } catch (RuntimeException exception) {
@@ -119,13 +142,16 @@ public class RecruitmentResumeAnalysisService {
         resumeMapper.updateById(resume);
     }
 
-    private void applySuccess(CandidateResume resume, CandidateResumeAnalysis analysis, String extractedText, JsonNode profile) {
+    private void applySuccess(CandidateResume resume, CandidateResumeAnalysis analysis, String extractedText,
+                              JsonNode profile, RecruitmentSensitiveDataRedactor.Result redaction) {
         String summary = firstText(profile, "candidateProfile", "summary");
         List<String> skills = profile.path("skills").isArray()
                 ? new LinkedHashSet<>(toStrings(profile.path("skills"))).stream().limit(MAX_SKILLS).toList()
                 : List.of();
         try {
             analysis.setStatus(SUCCESS);
+            analysis.setRedactionVersion(redaction.version());
+            analysis.setRedactionSummary(trim(redaction.summary(), 500));
             analysis.setExtractedText(extractedText);
             analysis.setProfileJson(objectMapper.writeValueAsString(profile));
             analysis.setErrorMessage(null);
@@ -197,6 +223,7 @@ public class RecruitmentResumeAnalysisService {
     }
 
     private String safeError(RuntimeException exception) {
+        if (exception instanceof AiGovernanceException) return trim(exception.getMessage(), 300);
         if (exception instanceof BusinessException) {
             return trim(exception.getMessage(), 300);
         }

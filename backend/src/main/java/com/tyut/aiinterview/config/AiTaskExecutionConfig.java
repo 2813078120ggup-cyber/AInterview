@@ -24,6 +24,13 @@ public class AiTaskExecutionConfig {
         return executor("report-scoring-", concurrency, queueCapacity);
     }
 
+    @Bean(name = "aiGovernanceEvaluationExecutor")
+    public Executor aiGovernanceEvaluationExecutor(
+            @Value("${app.ai-governance.evaluation-concurrency:1}") int concurrency,
+            @Value("${app.ai-governance.evaluation-queue-capacity:5}") int queueCapacity) {
+        return executor("ai-governance-eval-", concurrency, queueCapacity);
+    }
+
     private ThreadPoolTaskExecutor executor(String threadPrefix, int requestedSize, int requestedQueueCapacity) {
         int size = Math.max(1, Math.min(8, requestedSize));
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

@@ -1,6 +1,7 @@
 package com.tyut.aiinterview.domain;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.Data;
 
@@ -12,7 +13,11 @@ public class AiGenerationRecord {
     private Long taskId;
     private Long interviewId;
     private Long freeInterviewSessionId;
+    private Long companyId;
     private String generationType;
+    private String governanceScope;
+    private Long governancePolicyId;
+    private Long costReservationId;
     private String promptCode;
     private Integer promptVersionNo;
     private String provider;
@@ -24,6 +29,8 @@ public class AiGenerationRecord {
     private Integer promptTokens;
     private Integer completionTokens;
     private Integer totalTokens;
+    private BigDecimal estimatedCostUsd;
+    private BigDecimal actualCostUsd;
     private Integer httpStatus;
     private String errorType;
     private String errorMessage;

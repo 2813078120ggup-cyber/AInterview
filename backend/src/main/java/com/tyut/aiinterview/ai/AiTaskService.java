@@ -30,6 +30,9 @@ import com.tyut.aiinterview.prompt.PromptTemplateService;
 import com.tyut.aiinterview.recruitment.RecruitmentResumeAnalysisService;
 import com.tyut.aiinterview.recruitment.RecruitmentJobMatchService;
 import com.tyut.aiinterview.recruitment.CompanyAccessService;
+import com.tyut.aiinterview.governance.RecruitmentAiGovernanceService;
+import com.tyut.aiinterview.governance.AiGovernanceException;
+import com.tyut.aiinterview.governance.RecruitmentSensitiveDataRedactor;
 import com.tyut.aiinterview.security.CurrentUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -85,6 +88,7 @@ public class AiTaskService {
     private final Executor aiTaskWorkerExecutor;
     private final Executor reportScoringExecutor;
     private final RecruitmentResumeAnalysisService recruitmentResumeAnalysisService;
+    private final RecruitmentSensitiveDataRedactor sensitiveDataRedactor;
     private final int taskFetchLimit;
     private final long taskLeaseSeconds;
     private final String workerId = java.net.InetAddress.getLoopbackAddress().getHostName() + ":" + UUID.randomUUID();
@@ -96,6 +100,7 @@ public class AiTaskService {
     private RecruitmentJobMatchService recruitmentJobMatchService;
     private CompanyAccessService companyAccessService;
     private OperationAuditService operationAuditService;
+    private RecruitmentAiGovernanceService recruitmentAiGovernanceService;
     @Value("${app.ai-task.scheduler-enabled:true}")
     private boolean schedulerEnabled = true;
 
@@ -123,6 +128,7 @@ public class AiTaskService {
         this.promptTemplates = promptTemplates;
         this.choiceAnswerScorer = choiceAnswerScorer;
         this.objectMapper = objectMapper;
+        this.sensitiveDataRedactor = new RecruitmentSensitiveDataRedactor(objectMapper);
         this.simulationFollowUpPolicy = new SimulationFollowUpPolicy(objectMapper);
         this.followUpQualityGuard = new FollowUpQualityGuard();
         this.currentUser = currentUser;
@@ -131,6 +137,11 @@ public class AiTaskService {
         this.reportScoringExecutor = reportScoringExecutor;
         this.taskFetchLimit = Math.max(1, Math.min(50, taskFetchLimit));
         this.taskLeaseSeconds = Math.max(60, taskLeaseSeconds);
+    }
+
+    @Autowired(required = false)
+    void setRecruitmentAiGovernanceService(RecruitmentAiGovernanceService governanceService) {
+        this.recruitmentAiGovernanceService = governanceService;
     }
 
     @Transactional
@@ -568,11 +579,22 @@ public class AiTaskService {
                     candidateAnswer, questionType, isChoiceQuestion(questionType));
         }).toList();
 
+        Long recruitmentCompanyId = recruitmentAiGovernanceService == null ? null
+                : recruitmentAiGovernanceService.companyIdForInterview(interview.getId());
+        Map<Long, ModelEvaluationInput> modelInputs = new HashMap<>();
+        for (EvaluationInput input : inputs) {
+            modelInputs.put(input.interviewQuestion().getId(), new ModelEvaluationInput(
+                    prepareRecruitmentSensitive(recruitmentCompanyId, input.question()).value(),
+                    prepareRecruitmentSensitive(recruitmentCompanyId, input.reference()).value(),
+                    prepareRecruitmentSensitive(recruitmentCompanyId, input.candidateAnswer()).value()));
+        }
+
         Map<Long, CompletableFuture<JsonNode>> semanticEvaluations = new HashMap<>();
         for (EvaluationInput input : inputs) {
             if (input.choiceQuestion()) continue;
+            ModelEvaluationInput modelInput = modelInputs.get(input.interviewQuestion().getId());
             semanticEvaluations.put(input.interviewQuestion().getId(), CompletableFuture.supplyAsync(
-                    () -> deepSeekGateway.evaluateAnswer(input.question(), input.reference(), input.candidateAnswer(),
+                    () -> deepSeekGateway.evaluateAnswer(modelInput.question(), modelInput.reference(), modelInput.answer(),
                             context(task, null, "ANSWER_EVALUATION"), scoringPromptVersion).content(),
                     reportScoringExecutor));
         }
@@ -596,8 +618,9 @@ public class AiTaskService {
                         input.candidateAnswer(), false);
             }
             evaluations.add(evaluation);
+            ModelEvaluationInput modelInput = modelInputs.get(input.interviewQuestion().getId());
             contexts.add(new EvaluationContext(input.interviewQuestion().getSequenceNo(), input.questionType(),
-                    input.choiceQuestion() ? "objective_rule" : "ai_semantic", input.question(), input.candidateAnswer(),
+                    input.choiceQuestion() ? "objective_rule" : "ai_semantic", modelInput.question(), modelInput.answer(),
                     evaluation.getProfessionalScore(), evaluation.getExpressionScore(), evaluation.getLogicScore(),
                     evaluation.getAdaptabilityScore(), evaluation.getOverallScore(), evaluation.getComment()));
         }
@@ -605,8 +628,12 @@ public class AiTaskService {
         ReportEvaluationContext reportContext = new ReportEvaluationContext(
                 "objective_rule 表示客观选择题已由系统按标准答案判分；候选人只需选择选项，不得因答案短或没有解释而扣分。ai_semantic 表示简答题，可评价内容深度、表达、逻辑和应变。",
                 interviewQuestions.size(), contexts);
-        JsonNode narrative = deepSeekGateway.generateReport(write(reportContext),
+        JsonNode generatedNarrative = deepSeekGateway.generateReport(write(reportContext),
                 context(task, null, "SIMULATION_REPORT"), reportPromptVersion).content();
+        JsonNode narrative = recruitmentCompanyId == null || recruitmentAiGovernanceService == null
+                ? generatedNarrative
+                : tree(recruitmentAiGovernanceService.prepareSensitiveJson(recruitmentCompanyId,
+                        generatedNarrative.toString()).value());
         Report report = upsertReport(interview, task, evaluations, narrative, scoringPromptVersion, reportPromptVersion);
         return json("reportId", report.getId(), "evaluationCount", evaluations.size(),
                 "scoringPromptVersion", scoringPromptVersion, "reportPromptVersion", reportPromptVersion);
@@ -685,6 +712,16 @@ public class AiTaskService {
         report.setWeaknesses(requiredText(narrative, "weaknesses", 3000));
         report.setImprovementSuggestions(requiredText(narrative, "improvementSuggestions", 3000));
         report.setGenerationMethod("ai");
+        Long companyId = recruitmentAiGovernanceService == null ? null
+                : recruitmentAiGovernanceService.companyIdForInterview(interview.getId());
+        boolean humanReviewRequired = companyId != null && (recruitmentAiGovernanceService == null
+                || recruitmentAiGovernanceService.requiresHumanReview(companyId, report.getTotalScore(), "MEDIUM"));
+        report.setHumanReviewRequired(humanReviewRequired ? 1 : 0);
+        report.setHumanReviewStatus(humanReviewRequired ? "PENDING" : "NOT_REQUIRED");
+        report.setHumanReviewDecision(null);
+        report.setHumanReviewNote(null);
+        report.setHumanReviewedBy(null);
+        report.setHumanReviewedAt(null);
         report.setScoringPromptCode(PromptCatalog.ANSWER_EVALUATION);
         report.setScoringPromptVersionNo(scoringPromptVersion);
         report.setReportPromptCode(PromptCatalog.SIMULATION_REPORT);
@@ -700,8 +737,9 @@ public class AiTaskService {
     }
 
     private AiGenerationContext context(AiTask task, Long freeInterviewSessionId, String generationType) {
+        boolean recruitmentGoverned = AUTO_EVALUATION.equals(task.getTaskType());
         return new AiGenerationContext(task.getId(), task.getInterviewId(), freeInterviewSessionId,
-                generationType, task.getCreatedBy());
+                generationType, task.getCreatedBy(), null, recruitmentGoverned, false);
     }
 
     private void markInterviewReportReady(Long interviewId) {
@@ -1105,16 +1143,24 @@ public class AiTaskService {
         return value.isBlank() ? "big-tech" : value;
     }
     private boolean retryable(RuntimeException exception) {
+        if (exception instanceof AiGovernanceException) return false;
         String message = exception.getMessage() == null ? "" : exception.getMessage();
         return !(message.contains("未配置 DEEPSEEK_API_KEY")
                 || message.contains("未找到可用的大模型配置")
                 || message.contains("HTTP 401") || message.contains("HTTP 403"));
+    }
+    private RecruitmentSensitiveDataRedactor.Result prepareRecruitmentSensitive(Long companyId, String value) {
+        return companyId != null && recruitmentAiGovernanceService != null
+                ? recruitmentAiGovernanceService.prepareSensitiveInput(companyId, value)
+                : sensitiveDataRedactor.redact(value);
     }
     private String truncate(String value) { return value == null ? "未知错误" : value.substring(0, Math.min(1000, value.length())); }
 
     private record EvaluationInput(InterviewQuestion interviewQuestion, Question sourceQuestion,
                                    InterviewAnswer answer, String question, String reference,
                                    String candidateAnswer, String questionType, boolean choiceQuestion) {}
+
+    private record ModelEvaluationInput(String question, String reference, String answer) {}
 
     private record EvaluationContext(Integer sequenceNo, String questionType, String scoringMethod,
                                      String question, String answer, BigDecimal professionalScore,

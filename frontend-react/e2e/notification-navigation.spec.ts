@@ -17,6 +17,7 @@ async function prepare(page: Page, scenario: Scenario) {
     localStorage.setItem('ai_interview_profile', JSON.stringify(userValue))
   }, user)
   await page.route('**/api/**', route => route.fulfill({ status: 503, json: { code: 50300, message: '页面数据测试桩未启用' } }))
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { data: user } }))
   await page.route('**/api/v1/account/profile', route => route.fulfill({ json: { data: { realName: user.realName, avatarAvailable: false } } }))
   await page.route('**/api/v1/notifications?*', route => route.fulfill({ json: { data: { records: [{
     id: '91', notificationType: 'JOB_APPLICATION', title: '申请状态已更新', content: '点击查看对应业务详情',

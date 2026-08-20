@@ -1,5 +1,10 @@
 package com.tyut.aiinterview.admin;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,4 +45,28 @@ public final class AdminRecruitmentDtos {
                               Long operatorId, LocalDateTime createdAt) {}
 
     public record Detail(ApplicationView application, List<StatusEvent> statusHistory) {}
+
+    public record RequisitionQuery(Long pageNo, Long pageSize, Long companyId, String approvalStatus,
+                                   Boolean frozen, String keyword) {}
+
+    public record RequisitionView(Long id, String requisitionNo, Ref company, Ref position,
+                                  String headcountCode, Integer requestedHeadcount, Integer approvedHeadcount,
+                                  String costCenterCode, String costCenterName,
+                                  BigDecimal budgetAmount, String budgetCurrency,
+                                  String businessJustification, String approvalStatus,
+                                  Long submittedBy, LocalDateTime submittedAt,
+                                  Long reviewedBy, LocalDateTime reviewedAt, String reviewNote,
+                                  boolean frozen, Long frozenBy, LocalDateTime frozenAt,
+                                  String freezeReason, LocalDateTime updatedAt) {}
+
+    public record RequisitionEvent(Long id, String eventType, String fromStatus, String toStatus,
+                                   Long operatorId, String operatorName, String note,
+                                   LocalDateTime createdAt) {}
+
+    public record RequisitionDetail(RequisitionView requisition, List<RequisitionEvent> history) {}
+
+    public record ApprovalRequest(@NotNull @Min(1) @Max(1000) Integer approvedHeadcount,
+                                  @Size(max = 1000) String note) {}
+
+    public record DecisionRequest(@NotBlank @Size(max = 1000) String note) {}
 }

@@ -65,6 +65,7 @@ export function CompanyApplicationDetail() {
   const [profileState, setProfileState] = useState<TabState<CompanyResumeAnalysis>>(tabState)
   const [matchState, setMatchState] = useState<TabState<MatchEvaluation>>(tabState)
   const [matchHistory, setMatchHistory] = useState<TabState<PageResult<MatchEvaluation>>>(tabState)
+  const [matchReviewBusy, setMatchReviewBusy] = useState(false)
   const [interviewState, setInterviewState] = useState<TabState<ApplicationInterview>>(tabState)
   const [reportState, setReportState] = useState<TabState<CompanyReportDetail>>(tabState)
   const [timelineState, setTimelineState] = useState<TabState<ApplicationTimelineEvent[]>>(tabState)
@@ -178,6 +179,23 @@ export function CompanyApplicationDetail() {
     if (historyResult.status === 'fulfilled') setMatchHistory({ loaded: true, loading: false, data: historyResult.value, error: '' })
     else setMatchHistory({ loaded: true, loading: false, error: historyResult.reason instanceof Error ? historyResult.reason.message : '匹配历史加载失败' })
   }, [id, matchHistory.loaded, matchState.loaded])
+
+  const reviewMatch = useCallback(async (decision: string, note: string) => {
+    if (!id) return
+    setMatchReviewBusy(true)
+    setMatchState(current => ({ ...current, error: '' }))
+    try {
+      const data = await request<MatchEvaluation>(`/v1/company/recruitment/applications/${id}/match/review`, {
+        method: 'POST', body: JSON.stringify({ decision, note: note.trim() || undefined }),
+      })
+      setMatchState({ loaded: true, loading: false, data, error: '' })
+      setMatchHistory(tabState())
+      setMessage('人工复核已记录，后续招聘动作将以人工决定为准。')
+    } catch (reason) {
+      setMatchState(current => ({ ...current, error: reason instanceof Error ? reason.message : '人工复核提交失败，请稍后重试。' }))
+      throw reason
+    } finally { setMatchReviewBusy(false) }
+  }, [id])
 
   const loadInterview = useCallback(async (force = false) => {
     if (!id || (interviewState.loaded && !force)) return
@@ -380,7 +398,7 @@ export function CompanyApplicationDetail() {
       <main id={`application-panel-${activeTab}`} role="tabpanel" aria-labelledby={`application-tab-${activeTab}`} tabIndex={-1} className="min-w-0">
         {activeTab === 'overview' && <OverviewTab selected={selected} reviewNote={reviewNote} setReviewNote={setReviewNote} transitions={availableTransitions} busy={busy} onTransition={triggerTransition} talentPool={talentPoolState} onAddToTalentPool={addToTalentPool} />}
         {activeTab === 'profile' && <ProfileTab selected={selected} state={profileState} retry={() => void loadProfile(true)} retryAnalysis={() => void retryProfileAnalysis()} />}
-        {activeTab === 'match' && <MatchTab selected={selected} evaluation={matchState} history={matchHistory} busy={busy} retry={() => void loadMatch(true)} retryMatch={() => void retryMatch()} />}
+        {activeTab === 'match' && <MatchTab selected={selected} evaluation={matchState} history={matchHistory} busy={busy || matchReviewBusy} retry={() => void loadMatch(true)} retryMatch={() => void retryMatch()} reviewMatch={reviewMatch} />}
         {activeTab === 'interview' && <InterviewTab state={interviewState} retry={() => void loadInterview(true)} />}
         {activeTab === 'report' && <ReportTab state={reportState} retry={() => void loadReport(true)} actionBusy={reportBusy} onRetry={() => void reportAction('retry')} onPublish={() => void reportAction('publish')} />}
         {activeTab === 'timeline' && <TimelineTab state={timelineState} retry={() => void loadTimeline(true)} />}
@@ -557,11 +575,29 @@ function ResumeFilePanel({ applicationId, fileName, mediaId }: { applicationId: 
   return <div className="mt-5 border-t border-border pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold text-muted-foreground">原文件</p><p className="mt-1 truncate text-sm font-semibold">{fileName || '未提供文件名'} <span className="font-normal text-muted-foreground">· {kind === 'pdf' ? 'PDF 在线预览' : kind === 'docx' ? 'DOCX 结构化内容 + 受保护下载' : kind === 'txt' ? 'TXT 结构化内容 + 受保护下载' : '受保护下载'}</span></p></div><div className="flex flex-wrap gap-2">{kind === 'pdf' && <Button type="button" variant="secondary" disabled={loading} onClick={() => void previewPdf()}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}在线预览</Button>}<Button type="button" variant="ghost" disabled={loading} onClick={() => void openOriginal()}>{kind === 'pdf' ? <ExternalLink className="h-4 w-4" /> : <Download className="h-4 w-4" />}{kind === 'pdf' ? '打开原文件' : '受保护下载'}</Button></div></div>{error && <p role="alert" className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200">{error}</p>}{kind === 'docx' && <p className="mt-3 rounded-2xl bg-muted p-3 text-xs leading-5 text-muted-foreground">DOCX 第一阶段不伪装成网页 Word 预览；上方结构化画像用于快速审阅，原文件通过企业私有接口受保护下载。</p>}{kind === 'txt' && <p className="mt-3 rounded-2xl bg-muted p-3 text-xs leading-5 text-muted-foreground">TXT 原文不在 HR 页面直接展开，避免把完整简历文本混入画像视图；需要核验时使用受保护下载。</p>}{pdf && <div className="mt-4 overflow-hidden rounded-2xl border border-border"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2"><div className="flex items-center gap-1"><Button type="button" variant="ghost" className="h-9 w-9 px-0" disabled={pageNumber <= 1} onClick={() => setPageNumber(value => Math.max(1, value - 1))} aria-label="上一页"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-20 text-center text-xs font-semibold">第 {pageNumber} / {pdf.numPages} 页</span><Button type="button" variant="ghost" className="h-9 w-9 px-0" disabled={pageNumber >= pdf.numPages} onClick={() => setPageNumber(value => Math.min(pdf.numPages, value + 1))} aria-label="下一页"><ChevronRight className="h-4 w-4" /></Button></div><div className="flex items-center gap-1"><Button type="button" variant="ghost" className="h-9 w-9 px-0" onClick={() => setScale(value => Math.max(.7, Number((value - .1).toFixed(2))))} aria-label="缩小"><Minus className="h-4 w-4" /></Button><span className="w-14 text-center text-xs text-muted-foreground">{Math.round(scale * 100)}%</span><Button type="button" variant="ghost" className="h-9 w-9 px-0" onClick={() => setScale(value => Math.min(2.2, Number((value + .1).toFixed(2))))} aria-label="放大"><Plus className="h-4 w-4" /></Button></div></div><div className="overflow-auto bg-muted p-3 sm:p-6"><div className="mx-auto w-fit max-w-none bg-white shadow-[0_18px_50px_rgba(40,32,20,.16)]" style={{ width: pageSize.width || 0, minHeight: pageSize.height || 240 }}><canvas ref={canvasRef} className="block" aria-label="简历 PDF 页面" /></div></div></div>}</div>
 }
 
-function MatchTab({ selected, evaluation, history, busy, retry, retryMatch }: { selected: JobApplication; evaluation: TabState<MatchEvaluation>; history: TabState<PageResult<MatchEvaluation>>; busy: boolean; retry: () => void; retryMatch: () => void }) {
+function MatchTab({ selected, evaluation, history, busy, retry, retryMatch, reviewMatch }: { selected: JobApplication; evaluation: TabState<MatchEvaluation>; history: TabState<PageResult<MatchEvaluation>>; busy: boolean; retry: () => void; retryMatch: () => void; reviewMatch: (decision: string, note: string) => Promise<void> }) {
+  const [decision, setDecision] = useState('APPROVE')
+  const [note, setNote] = useState('')
+  const [submitted, setSubmitted] = useState(false)
   if (evaluation.loading || history.loading) return <TabLoading label="正在加载岗位匹配与历史评估…" />
   if (evaluation.error && !evaluation.data) return <TabError message={evaluation.error} retry={retry} />
   if (!evaluation.data) return <Card className="p-5"><MatchStatusCard selected={selected} busy={busy} retryMatch={retryMatch} /></Card>
-  return <div className="space-y-4"><RecruitmentMatchEvaluation evaluation={evaluation.data} history={history.data} historyLoading={history.loading} historyError={history.error} /><div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">{evaluation.error && <span className="text-rose-700 dark:text-rose-200">当前评估加载部分失败：{evaluation.error}</span>}{evaluation.data.status === 'FAILED' && <Button type="button" variant="secondary" disabled={busy} onClick={retryMatch}><RotateCcw className="h-4 w-4" />重新分析</Button>}</div></div>
+  const item = evaluation.data
+  const pendingReview = item.humanReviewRequired && (!item.humanReviewStatus || item.humanReviewStatus === 'PENDING')
+  async function submitReview() {
+    if ((decision === 'OVERRIDE' || decision === 'DISMISS') && !note.trim()) { setSubmitted(true); return }
+    setSubmitted(false)
+    await reviewMatch(decision, note)
+    setNote('')
+  }
+  const reviewLabel = pendingReview ? '待复核' : item.humanReviewStatus === 'OVERRIDDEN' ? '已覆盖' : item.humanReviewStatus === 'DISMISSED' ? '已忽略' : item.humanReviewStatus === 'NOT_REQUIRED' ? '策略免复核' : '已确认'
+  return <div className="space-y-4"><RecruitmentMatchEvaluation evaluation={item} history={history.data} historyLoading={history.loading} historyError={history.error} />
+    <Card className={pendingReview ? 'border-[var(--warning-foreground)]/25 bg-[var(--warning)] p-5 sm:p-6' : 'p-5 sm:p-6'}>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Human checkpoint</p><h3 className="mt-2 text-xl font-bold">人工复核</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">AI 匹配只提供证据与排序参考。安排面试或形成最终结论前，必须由招聘人员确认、覆盖或忽略该结果。</p></div><Badge tone={pendingReview ? 'warning' : item.humanReviewStatus === 'OVERRIDDEN' || item.humanReviewStatus === 'DISMISSED' ? 'info' : 'success'}>{reviewLabel}</Badge></div>
+      {pendingReview ? <div className="mt-5 grid gap-4 lg:grid-cols-[220px_1fr_auto] lg:items-end"><label className="text-sm font-semibold">复核决定<ResponsiveSelect ariaLabel="选择人工复核决定" value={decision} onValueChange={setDecision} options={[{ value: 'APPROVE', label: '确认 AI 证据' }, { value: 'OVERRIDE', label: '覆盖 AI 结论' }, { value: 'DISMISS', label: '忽略本次结果' }]} className="mt-2 w-full" /></label><label className="text-sm font-semibold">人工依据<textarea value={note} onChange={event => setNote(event.target.value)} className="mt-2 min-h-12 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--brand)]/20" maxLength={1000} placeholder={decision === 'APPROVE' ? '可选：补充人工核验依据' : '必填：说明覆盖或忽略 AI 结论的依据'} /></label><Button type="button" disabled={busy} onClick={() => void submitReview()}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}提交复核</Button></div> : <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3"><MetaItem label="复核决定" value={item.humanReviewDecision === 'OVERRIDE' ? '覆盖 AI 结论' : item.humanReviewDecision === 'DISMISS' ? '忽略本次结果' : '确认 AI 证据'} /><MetaItem label="复核时间" value={formatDateTime(item.humanReviewedAt)} /><MetaItem label="人工依据" value={item.humanReviewNote || '未补充说明'} /></dl>}
+      {submitted && <p role="alert" className="mt-3 text-xs text-[var(--danger-foreground)]">覆盖或忽略 AI 结论时必须填写人工依据。</p>}
+    </Card>
+    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">{evaluation.error && <span className="text-rose-700 dark:text-rose-200">当前评估加载部分失败：{evaluation.error}</span>}{item.status === 'FAILED' && <Button type="button" variant="secondary" disabled={busy} onClick={retryMatch}><RotateCcw className="h-4 w-4" />重新分析</Button>}</div></div>
 }
 
 function InterviewTab({ state, retry }: { state: TabState<ApplicationInterview>; retry: () => void }) {
@@ -588,10 +624,11 @@ function ReportTab({ state, retry, actionBusy, onRetry, onPublish }: { state: Ta
         <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        {report.reportStatus === 'READY' && <Button type="button" disabled={actionBusy} onClick={onPublish}><ShieldCheck className="h-4 w-4" />发布给候选人</Button>}
+        {report.reportStatus === 'READY' && <Button type="button" disabled={actionBusy} onClick={onPublish}><ShieldCheck className="h-4 w-4" />复核并发布</Button>}
         {report.canRetry && <Button type="button" variant="secondary" disabled={actionBusy} onClick={onRetry}>{actionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}受控重试</Button>}
         {report.reportStatus === 'READY' && <span className="text-xs text-muted-foreground">内部查看不会自动发布。</span>}
       </div>
+      {hasReport && <div className={'mt-5 rounded-2xl px-4 py-3 text-sm leading-6 ' + (report.humanReviewStatus === 'APPROVED' ? 'bg-[var(--success)] text-[var(--success-foreground)]' : 'bg-[var(--warning)] text-[var(--warning-foreground)]')}><ShieldCheck className="mr-2 inline h-4 w-4" />{report.humanReviewStatus === 'APPROVED' ? `已由人工复核${report.humanReviewedAt ? ` · ${formatDateTime(report.humanReviewedAt)}` : ''}。候选人看到的是经过企业确认后的报告。` : '当前为 AI 生成的企业内部草稿；发布操作同时记录人工复核人、时间与决定。'}</div>}
       {!hasReport && <div className="mt-5 rounded-2xl border border-border bg-muted/60 p-4"><p className="font-bold">{statusMeta.label}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{report.taskMessage || '面试已经结束，但报告还没有可展示的结果。请稍后刷新或使用受控重试。'}</p>{report.taskAttempts != null && <p className="mt-2 text-xs text-muted-foreground">已尝试 {report.taskAttempts} 次</p>}</div>}
       {hasReport && <div className="mt-5 grid gap-3 sm:grid-cols-3"><ScoreBox label="综合得分" value={report.totalScore} emphasis /><ScoreBox label="专业能力" value={report.professionalScore} /><ScoreBox label="表达能力" value={report.expressionScore} /><ScoreBox label="逻辑思维" value={report.logicScore} /><ScoreBox label="适应能力" value={report.adaptabilityScore} /><MetaItem label="有效题目数" value={`${report.questionCount} 道`} /></div>}
       {hasReport && report.reliabilityWarning && <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><AlertTriangle className="mr-2 inline h-4 w-4" />{report.reliabilityWarning}</p>}
