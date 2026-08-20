@@ -8,7 +8,7 @@
 
 ### 结构文档与容器运行态同步
 
-- 文档：按当前代码同步 `docs/README.md` 与 `docs/project-structure.md`，将认证页、企业 HR 注册、四位图形验证码、服务端会话权威、候选人/企业/管理员受众边界、AI 招聘治理、招聘 requisition 审批、主题设置和 V41–V47 Flyway 迁移纳入结构说明。
+- 文档：按当前代码同步 `docs/README.md`、`docs/project-structure.md` 和 `docs/database/README.md`，将认证页、企业 HR 注册、四位图形验证码、服务端会话权威、候选人/企业/管理员受众边界、AI 招聘治理、招聘 requisition 审批、主题设置和 V41–V47 Flyway 迁移纳入结构说明。
 - 运维：仅重建并以 `docker compose -p ainterview up -d --no-deps backend frontend` 替换 backend/frontend，未执行 `down -v`，MySQL、Redis、Gateway、注册中心、判题 Worker 和监控服务保持原容器与数据卷。新 backend 镜像构建成功并健康运行，frontend 镜像构建成功并正常运行；Nginx 配置检查通过，`/login`、`/register`、`/forgot-password` 均返回 HTTP 200，生产资源包含企业注册页面。
 - 验证：backend 启动日志显示 Flyway 已校验 41 条迁移并将数据库迁移至 V47；Compose 配置解析、前后端生产镜像构建和容器状态检查通过。本条与本次 Git 提交一并上传远程仓库。
 
