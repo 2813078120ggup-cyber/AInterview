@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+### 数据字典 Docker 运行态同步
+
+- 运维：仅执行 `docker compose -p ainterview build backend frontend` 和 `docker compose -p ainterview up -d --no-deps backend frontend`，未执行 `down`、未删除数据卷，也未重启 MySQL、Redis、Gateway、注册中心、判题 Worker 或监控服务。
+- 镜像：backend 运行容器 `2feb617a2765` 使用镜像摘要 `sha256:9809de4417f6365191cf4abc63126c7382a07362f7a3c13e8816e0a29475a1ad`；frontend 运行容器 `a0a36d858d2c` 使用镜像摘要 `sha256:5c1e3bdabb9ada84e605f4c9d0e82538444f69daad4a431ca405dc2e887bbac6`。backend/frontend 均已正常运行，backend 健康检查通过。
+- 验证：backend 启动日志确认 Flyway 当前版本 V47 且无需迁移；frontend 容器 `nginx -t` 通过，生产资源包含 `admin-data-dictionary` 页面包；`/`、`/login`、`/admin/operations/data-dictionary` 均返回 HTTP 200，未认证调用数据字典 API 返回 401。Compose 配置解析通过。
+
 ### 管理端运维数据字典
 
 - 新增：超级管理员运维域增加只读 `/admin/operations/data-dictionary`，从当前应用 MySQL catalog 的 `information_schema` 实时聚合表、视图、字段、注释、索引、主键、唯一约束和外键关系，并展示 Flyway 最新成功版本、生成时间和 schema fingerprint；不读取业务行数据，不接受前端 schema 或任意 SQL。
