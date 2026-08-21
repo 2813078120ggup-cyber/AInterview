@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### 管理端运维数据字典
+
+- 新增：超级管理员运维域增加只读 `/admin/operations/data-dictionary`，从当前应用 MySQL catalog 的 `information_schema` 实时聚合表、视图、字段、注释、索引、主键、唯一约束和外键关系，并展示 Flyway 最新成功版本、生成时间和 schema fingerprint；不读取业务行数据，不接受前端 schema 或任意 SQL。
+- 安全：数据字典 API 统一要求 `ADMIN` 角色，表名经过格式和当前元数据 allowlist 校验，排序与分页参数受限；密码、Token、密钥、联系方式等敏感字段只标记用途，默认值返回隐藏标识，不回传 JDBC URL、账号、连接信息或真实敏感值。元数据快照采用短 TTL 缓存，读取失败统一返回安全的 503 文案。
+- 体验：运维导航在“运行状态”后增加“数据字典”入口；页面沿用管理员端暖色 Token、Card、Badge 和移动端表格，支持关键词、表类型、敏感性、主键/外键筛选、URL 状态分页，以及字段、索引/约束、关联关系详情，并覆盖加载、空结果、重试和 stale 状态。
+- 验证：backend Maven 全量 360 项测试通过（0 failures / 0 errors / 0 skipped）；前端 `npx.cmd tsc --noEmit`、`npm.cmd run lint -- --no-fix`、`npm.cmd run build` 通过；数据字典 Playwright 4/4 通过（含管理员导航、URL 筛选分页、错误重试、空状态和移动端溢出）；`git diff --check` 通过。本功能不新增 Flyway 迁移，Docker 镜像尚未重建。
+
 ### 结构文档与容器运行态同步
 
 - 文档：按当前代码同步 `docs/README.md`、`docs/project-structure.md` 和 `docs/database/README.md`，将认证页、企业 HR 注册、四位图形验证码、服务端会话权威、候选人/企业/管理员受众边界、AI 招聘治理、招聘 requisition 审批、主题设置和 V41–V47 Flyway 迁移纳入结构说明。

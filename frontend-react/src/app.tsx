@@ -43,6 +43,7 @@ const AdminSettings = lazyPage(() => import('@/pages/admin-settings').then(modul
 const AdminThemeSettings = lazyPage(() => import('@/pages/admin-theme-settings').then(module => ({ default: module.AdminThemeSettings })))
 const AdminWorkspace = lazyPage(() => import('@/pages/admin-workspace').then(module => ({ default: module.AdminWorkspace })))
 const AdminOperations = lazyPage(() => import('@/pages/admin-operations').then(module => ({ default: module.AdminOperations })))
+const AdminDataDictionary = lazyPage(() => import('@/pages/admin-data-dictionary').then(module => ({ default: module.AdminDataDictionary })))
 const AdminUsers = lazyPage(() => import('@/pages/admin-users').then(module => ({ default: module.AdminUsers })))
 const AdminUserDetail = lazyPage(() => import('@/pages/admin-user-detail').then(module => ({ default: module.AdminUserDetail })))
 const AdminRoles = lazyPage(() => import('@/pages/admin-roles').then(module => ({ default: module.AdminRoles })))
@@ -228,6 +229,7 @@ export function App() {
         <Route path="/admin/ai-generations" element={<Protected requiredAudience="admin"><AdminPageShell><AdminAiGenerations /></AdminPageShell></Protected>} />
         <Route path="/admin/audit-logs" element={<Protected requiredAudience="admin"><AdminPageShell><AdminAuditLog /></AdminPageShell></Protected>} />
         <Route path="/admin/operations" element={<Protected requiredAudience="admin"><AdminPageShell><AdminOperations /></AdminPageShell></Protected>} />
+        <Route path="/admin/operations/data-dictionary" element={<Protected requiredAudience="admin"><AdminPageShell><AdminDataDictionary /></AdminPageShell></Protected>} />
         <Route path="/admin/algorithm/problems" element={<Protected requiredAudience="admin"><AdminPageShell><AdminAlgorithmProblems /></AdminPageShell></Protected>} />
         <Route path="/admin/learning-resources" element={<Protected requiredAudience="admin"><AdminPageShell><AdminLearningResources /></AdminPageShell></Protected>} />
         <Route path="/admin/learning-resources/:publicId" element={<Protected requiredAudience="admin"><AdminPageShell><LearningResourceViewer /></AdminPageShell></Protected>} />

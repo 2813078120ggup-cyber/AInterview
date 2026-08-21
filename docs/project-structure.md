@@ -1,6 +1,6 @@
 # 项目结构说明
 
-> 更新日期：2026-08-20  
+> 更新日期：2026-08-21  
 > 当前根目录：`D:\Ainterview`  
 > 本文档以当前工作区真实代码、Maven 配置、前端路由、Flyway 脚本和 `docker-compose.yml` 为准。
 
@@ -89,7 +89,7 @@ backend/
 │  ├─ ai/                   DeepSeek、异步 AI 任务、追问和质量保护
 │  ├─ algorithm/            算法 API、提交记录、任务发布和 Worker 客户端
 │  ├─ account/              当前用户资料、头像、联系方式、密码、会话、通知偏好和安全活动
-│  ├─ admin/                超级管理员工作台、企业、招聘、AI 运维和平台操作
+│  ├─ admin/                超级管理员工作台、企业、招聘、AI 运维、数据字典和平台操作
 │  ├─ auth/                 个人/企业 HR 注册、登录、四位图形验证码和刷新令牌
 │  ├─ common/               统一响应、异常和分页基础对象
 │  ├─ config/               应用、Flyway、JSON、限流和上传安全配置
@@ -217,7 +217,7 @@ frontend-react/
 | 候选人端 | `CandidatePageShell` | `/workspace`、`/jobs`、`/applications`、`/resumes`、`/candidate/interviews`、`/algorithm/**`、`/learning-resources/**`、`/candidate/tickets/**` |
 | 候选人账户 | `CandidatePageShell` | `/candidate/settings/profile`、`/candidate/settings/security`、`/candidate/settings/notifications`；`/candidate/settings` 和 `/users` 保留重定向并传递 query 参数 |
 | 企业/HR 端 | `CompanyPageShell` | `/company`、`/company/positions/**`、`/company/applications/**`、`/company/interviews/**`、`/company/talent-pool/**`、`/company/team`、`/company/settings`、`/company/analytics/**` |
-| 超级管理员端 | `AdminPageShell` | `/admin/workspace`、`/admin/companies/**`、`/admin/users/**`、`/admin/roles`、`/admin/recruitment/**`、`/admin/ai-operations/**`、`/admin/interviews/**`、`/admin/candidates/**`、`/admin/question-banks/**`、`/admin/tickets/**`、`/admin/algorithm/problems`、`/admin/learning-resources/**`、`/admin/prompt-templates`、`/admin/ai-generations`、`/admin/audit-logs`、`/admin/operations`、`/admin/settings` |
+| 超级管理员端 | `AdminPageShell` | `/admin/workspace`、`/admin/companies/**`、`/admin/users/**`、`/admin/roles`、`/admin/recruitment/**`、`/admin/ai-operations/**`、`/admin/interviews/**`、`/admin/candidates/**`、`/admin/question-banks/**`、`/admin/tickets/**`、`/admin/algorithm/problems`、`/admin/learning-resources/**`、`/admin/prompt-templates`、`/admin/ai-generations`、`/admin/audit-logs`、`/admin/operations`、`/admin/operations/data-dictionary`、`/admin/settings` |
 | 面试专用页 | 独立受保护页面 | `/candidate/interviews/:id/room`、`/candidate/interviews/:id/report`、`/candidate/free-interview` |
 
 当前 `frontend-react/src/app.tsx` 保持页面懒加载；账户设置的资料、安全和通知页共享一次 `CandidatePageShell`，旧 `/users` 仅作兼容重定向。企业端已经包含面试、人才库、团队和分析域；超级管理员端已经包含企业、用户、角色、招聘和 AI 运维域。后续页面扩展应在不改变现有路由权限的前提下进行。

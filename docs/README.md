@@ -9,6 +9,7 @@
 - 企业端：岗位与申请流程、人才库、AI/线下面试、报告复核与发布、企业团队角色权限、招聘分析和企业设置。
 - 管理端：企业、用户、平台员工、候选人档案、角色权限、跨企业招聘运营、AI Provider/Prompt/任务追踪、服务工单、操作审计和运行健康。
 - 账户与安全：密码/验证码登录、短期 Access Token 与 Refresh Token 轮换、设备会话管理、联系方式验证、头像、通知偏好、安全活动和角色变更会话撤销；公开认证页统一支持个人注册、企业 HR 注册、找回密码和四位图形验证码，前端以 `/v1/auth/me` 建立权威会话并按候选人、企业和管理员受众隔离路由。
+- 运维与数据治理：超级管理员运维域提供只读数据字典，从当前 MySQL catalog 的 `information_schema` 展示表、视图、字段、索引、约束和外键关系，敏感默认值脱敏且不读取业务行数据；数据字典 API 仅允许 `ADMIN` 访问。
 - AI 与虚拟人：异步 AI 任务租约与恢复、版本化 Prompt、生成审计、Provider 测试状态持久化；OpenTalking 是唯一保留的虚拟人运行链路。
 - 数据库：唯一迁移源为 `backend/src/main/resources/db/migration/`，当前共有 40 个版本化脚本，版本为 V1、V9–V47，最新为 `V47__support_public_company_registration.sql`。新增迁移前必须重新检查最高版本；若目录未变化，则从 V48 开始，禁止修改 V1–V47。
 - 交付：Docker Compose 默认包含 MySQL、Redis、注册中心、判题 Worker、业务后端、Gateway 和前端；监控 profile 提供 Prometheus、Alertmanager 与 Grafana。

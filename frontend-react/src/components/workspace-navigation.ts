@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CalendarRange,
+  Database,
   ClipboardList,
   ClipboardCheck,
   Code2,
@@ -181,6 +182,7 @@ const adminDomains: WorkspaceDomain[] = [
     key: 'operations', label: '运维', description: '服务、配置与操作追踪', path: '/admin/operations',
     items: [
       { path: '/admin/operations', label: '运行状态', description: '查看服务状态与处理建议', icon: Activity },
+      { path: '/admin/operations/data-dictionary', label: '数据字典', description: '查看数据库表、字段与关联关系', icon: Database },
       { path: '/admin/settings', label: '平台设置', description: '维护平台基础配置', icon: Settings2 },
       { path: '/admin/theme-settings', label: '主题设置', description: '管理全局交互动效偏好', icon: Palette },
       { path: '/admin/tickets', label: '服务工单', description: '处理用户服务请求', icon: MessageSquareWarning },
