@@ -45,7 +45,11 @@ public class NotificationMailService {
         message.setTo(candidate.getEmail());
         message.setSubject(request.title());
         message.setText(buildContent(request));
-        mailSender.send(message);
+        try {
+            mailSender.send(message);
+        } catch (Exception ex) { // 邮件发送失败不影响通知主流程（站内信已送达），降级返回
+            return new NotificationDtos.MailSyncResponse(false, candidate.getEmail());
+        }
         return new NotificationDtos.MailSyncResponse(true, candidate.getEmail());
     }
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Download, ListChecks, Target, TrendingUp, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Download, FileText, ListChecks, Mic, Target, TrendingUp, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -6,6 +6,33 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { request, type TrainingPlan } from '@/lib/api'
 import { exportReportPdf } from '@/lib/report-export'
+
+export type QuestionVoiceReview = {
+  sequenceNo: number
+  question: string
+  voiceScore: number
+  speakingRate: number | null
+  fluency: number | null
+  emotionStability: number | null
+  clarity: number | null
+  voiceEvidence?: string
+}
+
+export type QuestionTextReview = {
+  sequenceNo: number
+  question: string
+  overallScore: number
+  professionalScore: number
+  expressionScore: number
+  logicScore: number
+  adaptabilityScore: number
+  comment: string
+  band: string | null
+  bandDefinition: string | null
+  inputDigest: string | null
+  scoringRuleVersion: number | null
+  textEvidence?: string
+}
 
 export type ReportDetailData = {
   totalScore: number
@@ -20,13 +47,31 @@ export type ReportDetailData = {
   status: number
   questionCount?: number
   reliabilityWarning?: string
+  questionVoiceReviews?: QuestionVoiceReview[]
+  questionTextReviews?: QuestionTextReview[]
 }
 
-const dimensions: Array<[keyof ReportDetailData, string, string]> = [
+type ScoreKey = 'professionalScore' | 'expressionScore' | 'logicScore' | 'adaptabilityScore'
+
+const dimensions: Array<[ScoreKey, string, string]> = [
   ['professionalScore', '专业能力', '核心知识、岗位技能与方案完整度'],
   ['expressionScore', '表达能力', '结构化表达、沟通清晰度与说服力'],
   ['logicScore', '逻辑思维', '问题拆解、推理链路与边界意识'],
   ['adaptabilityScore', '应变能力', '追问场景下的临场反应与调整能力'],
+]
+
+const voiceDimensions: Array<[keyof QuestionVoiceReview, string]> = [
+  ['speakingRate', '语速'],
+  ['fluency', '流利度'],
+  ['emotionStability', '情绪稳定性'],
+  ['clarity', '清晰度'],
+]
+
+const textDimensions: Array<[keyof QuestionTextReview, string]> = [
+  ['professionalScore', '专业'],
+  ['expressionScore', '表达'],
+  ['logicScore', '逻辑'],
+  ['adaptabilityScore', '应变'],
 ]
 
 function scoreLevel(score: number) {
@@ -35,6 +80,21 @@ function scoreLevel(score: number) {
   if (score >= 70) return '达标'
   if (score >= 60) return '待加强'
   return '需重点提升'
+}
+
+const bandLabels: Record<string, string> = {
+  expert: '专家级',
+  excellent: '优秀',
+  solid: '较完整',
+  adequate: '基本正确',
+  shallow: '概念浅',
+  fragmented: '零散',
+  unanswered: '未有效回答',
+}
+
+function bandLabel(band: string | null) {
+  if (!band) return '未评估'
+  return bandLabels[band] ?? band
 }
 
 function overallAssessment(score: number) {
@@ -259,6 +319,113 @@ export function ReportDetailView({
           </Card>
         ))}
       </div>
+
+      {report.questionVoiceReviews && report.questionVoiceReviews.length > 0 && (
+        <Card className="no-print overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-border pb-5">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Mic className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[var(--accent)]">语音表现</p>
+              <h2 className="mt-1 text-xl font-bold">逐题语音分析</h2>
+              <p className="mt-1 text-sm text-muted-foreground">基于录音的语速、流利度、情绪稳定性与清晰度评分。</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-5">
+            {report.questionVoiceReviews.map((item, index) => (
+              <article key={`${item.sequenceNo}-${index}`} className="rounded-2xl border border-border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-6">
+                    <span className="mr-2 inline-grid h-6 min-w-6 place-items-center rounded-md bg-[var(--accent-soft)] px-1.5 text-xs font-bold text-[var(--accent)]">
+                      {String(item.sequenceNo ?? index + 1).padStart(2, '0')}
+                    </span>
+                    {item.question}
+                  </p>
+                  <div className="flex items-end gap-1">
+                    <strong className="text-2xl tabular-nums">{item.voiceScore}</strong>
+                    <span className="text-xs text-muted-foreground">语音分</span>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {voiceDimensions.map(([key, label]) => {
+                    const value = item[key]
+                    return (
+                      <div key={key}>
+                        <div className="mb-1.5 flex justify-between text-xs">
+                          <span className="text-muted-foreground">{label}</span>
+                          <strong className="tabular-nums">{value == null ? '—' : value}</strong>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${value == null ? 0 : value}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </article>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {report.questionTextReviews && report.questionTextReviews.length > 0 && (
+        <Card className="no-print overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-border pb-5">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-700">
+              <FileText className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[var(--accent)]">文本理解与评价</p>
+              <h2 className="mt-1 text-xl font-bold">逐题回答评价</h2>
+              <p className="mt-1 text-sm text-muted-foreground">基于回答文本的语义理解，按分档规则给出四维评分与评语。</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-5">
+            {report.questionTextReviews.map((item, index) => (
+              <article key={`${item.sequenceNo}-${index}`} className="rounded-2xl border border-border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-6">
+                    <span className="mr-2 inline-grid h-6 min-w-6 place-items-center rounded-md bg-[var(--accent-soft)] px-1.5 text-xs font-bold text-[var(--accent)]">
+                      {String(item.sequenceNo ?? index + 1).padStart(2, '0')}
+                    </span>
+                    {item.question}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={item.band === 'unanswered' || item.band === 'fragmented' ? 'warning' : 'info'}>{bandLabel(item.band)}</Badge>
+                    <div className="flex items-end gap-1">
+                      <strong className="text-2xl tabular-nums">{item.overallScore}</strong>
+                      <span className="text-xs text-muted-foreground">总分</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {textDimensions.map(([key, label]) => {
+                    const value = item[key] as number
+                    return (
+                      <div key={key}>
+                        <div className="mb-1.5 flex justify-between text-xs">
+                          <span className="text-muted-foreground">{label}</span>
+                          <strong className="tabular-nums">{value == null ? '—' : value}</strong>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style={{ width: `${value == null ? 0 : value}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {item.comment && <p className="mt-3 text-sm leading-6 text-foreground">评语：{item.comment}</p>}
+                <div className="mt-3 rounded-xl border border-border bg-background/60 p-3 text-xs leading-5 text-muted-foreground">
+                  <p><span className="font-semibold text-foreground">评价依据（可追溯）：</span>{item.bandDefinition || '—'}</p>
+                  {item.inputDigest != null && <p className="mt-1">输入摘要：{item.inputDigest || '（空）'}</p>}
+                  {item.scoringRuleVersion != null && <p className="mt-1">评分规则版本：v{item.scoringRuleVersion}</p>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="report-print-detail-grid grid gap-6 lg:grid-cols-[.9fr_1.1fr]">
         <Card className="report-print-profile print-card">

@@ -6,6 +6,19 @@
 
 ## Unreleased
 
+### 语音分析感知模块（独立轻量 Python 服务）
+
+- 新增：新增 `voice-analysis-service/` 独立轻量 Python 服务，基于 librosa 本地计算语速、流利度（填充词/停顿）、情感稳定性（能量/音高变异系数）和清晰度（信噪比/过零率）四个维度，输出可追溯到原始音频的 `voice_score`，提供 FastAPI 接口（`GET /health`、`POST /v1/analyze`，支持本地音频路径与文件上传）。仅依赖 librosa/numpy/scipy，无需 GPU、无需 HuggingFace 模型或 OpenSmile。
+- 后端：新增 `voice` 包（`VoiceAnalysisDtos`、`VoiceAnalysisClient`、`VoiceAnalysisService`）与 `VoiceAnalysisProperties` 配置，采用旁路增强方式接入 `AiTaskService` 评分流程；语音分析失败或无音频时保持「未评估」，不阻断文本评分主链路。
+- 数据：Flyway `V48__add_voice_analysis_dimension.sql` 为 `evaluation` 表增加 `voice_score`、`voice_evidence`、`voice_evaluated_at` 三个可追溯字段，`voice_score` 为 NULL 时表示「未评估」。
+- 报告：`CompanyEvaluationView` 增加语音得分与证据字段，HR 报告可查看逐题语音维度。
+- 配置：新增 `app.voice-analysis.*` 配置项（默认关闭），`docker-compose.yml` 增加 `voice-analysis` 服务（与 backend 共享媒体卷），`.env.example` 补充对应环境变量。
+
+### 全栈技术栈与面试问答文档
+
+- 文档：新增 `docs/TECH_STACK_INTERVIEW_GUIDE.md`，以当前 Maven POM、前端依赖、服务配置、Compose、Flyway 迁移和关键实现为依据，系统整理架构边界、精确版本、Java/Spring/Security/MySQL/Redis/Cloud/AI/判题沙箱/媒体/React/WebRTC/部署/可观测性/测试等技术栈。
+- 面试：每个技术域补充项目落点、关键链路、设计取舍、故障与安全边界、详细面试题和参考回答，并单独列出综合项目回答、速记清单及不可夸大的未采用技术；本次仅新增文档，不修改业务代码、配置或数据库迁移。
+
 ### 数据字典 Docker 运行态同步
 
 - 运维：仅执行 `docker compose -p ainterview build backend frontend` 和 `docker compose -p ainterview up -d --no-deps backend frontend`，未执行 `down`、未删除数据卷，也未重启 MySQL、Redis、Gateway、注册中心、判题 Worker 或监控服务。

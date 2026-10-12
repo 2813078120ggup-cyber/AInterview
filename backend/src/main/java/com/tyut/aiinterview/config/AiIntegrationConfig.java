@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({StorageProperties.class, DeepSeekProperties.class, UploadSecurityProperties.class})
+@EnableConfigurationProperties({StorageProperties.class, DeepSeekProperties.class, UploadSecurityProperties.class,
+        VoiceAnalysisProperties.class})
 public class AiIntegrationConfig {
 }

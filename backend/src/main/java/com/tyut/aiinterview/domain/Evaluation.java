@@ -2,6 +2,7 @@ package com.tyut.aiinterview.domain;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.Data;
 
 @Data
@@ -19,4 +20,11 @@ public class Evaluation {
     private String comment;
     private Integer status;
     private Long confirmedBy;
+    private LocalDateTime confirmedAt;
+    // 语音分析感知维度（未评估时为 null）
+    private BigDecimal voiceScore;
+    private String voiceEvidence;
+    private LocalDateTime voiceEvaluatedAt;
+    // 文本理解与评价感知维度（未评估时为 null）
+    private String textEvidence;
 }

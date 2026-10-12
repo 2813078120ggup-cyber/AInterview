@@ -399,7 +399,7 @@ export function AdminQuestionBanks() {
                 <Button
                   type="button"
                   variant="danger"
-                  className="h-9 w-9 rounded-full p-0"
+                  className="h-9 w-9 rounded-full px-0"
                   disabled={updating || deleting}
                   onClick={() => setDeleteTarget(item)}
                   aria-busy={deleting}

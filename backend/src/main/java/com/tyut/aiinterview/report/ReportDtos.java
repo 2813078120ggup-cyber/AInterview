@@ -21,7 +21,30 @@ public final class ReportDtos {
                                String reportPromptCode, Integer reportPromptVersionNo,
                                Long generatedBy, String pdfUrl, Integer status,
                                LocalDateTime publishedAt, long questionCount,
-                                String reliabilityWarning) {
+                                String reliabilityWarning,
+                               List<QuestionVoiceReview> questionVoiceReviews,
+                               List<QuestionTextReview> questionTextReviews) {
+    }
+
+    /**
+     * 逐题语音表现（语音分析感知维度）。仅收录已评估（voiceScore 非空）的题目，
+     * 便于报告页逐题展示可追溯的语音维度得分。
+     */
+    public record QuestionVoiceReview(Integer sequenceNo, String question, BigDecimal voiceScore,
+                                      BigDecimal speakingRate, BigDecimal fluency,
+                                      BigDecimal emotionStability, BigDecimal clarity,
+                                      String voiceEvidence) {
+    }
+
+    /**
+     * 逐题文本理解与评价（文本理解与评价感知维度）。仅收录已评估（textEvidence 非空）的题目，
+     * 便于报告页逐题展示可追溯的文本理解证据与评分规则。
+     */
+    public record QuestionTextReview(Integer sequenceNo, String question, BigDecimal overallScore,
+                                     BigDecimal professionalScore, BigDecimal expressionScore,
+                                     BigDecimal logicScore, BigDecimal adaptabilityScore,
+                                     String comment, String band, String bandDefinition,
+                                     String inputDigest, Integer scoringRuleVersion, String textEvidence) {
     }
 
     /**
@@ -50,7 +73,8 @@ public final class ReportDtos {
 
     public record CompanyEvaluationView(BigDecimal professionalScore, BigDecimal expressionScore,
                                         BigDecimal logicScore, BigDecimal adaptabilityScore,
-                                        BigDecimal overallScore, String comment, String source, Integer status) {
+                                        BigDecimal overallScore, String comment, String source, Integer status,
+                                        BigDecimal voiceScore, String voiceEvidence) {
     }
 
     public record ReportListItem(Long reportId, Long interviewId, String interviewTitle, Long candidateId,

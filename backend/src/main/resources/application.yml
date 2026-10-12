@@ -127,6 +127,13 @@ app:
     api-key: ${DEEPSEEK_API_KEY:}
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
     model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+  voice-analysis:
+    enabled: ${VOICE_ANALYSIS_ENABLED:false}
+    base-url: ${VOICE_ANALYSIS_BASE_URL:http://127.0.0.1:8500}
+    internal-token: ${VOICE_ANALYSIS_INTERNAL_TOKEN:}
+    connect-timeout-ms: ${VOICE_ANALYSIS_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${VOICE_ANALYSIS_READ_TIMEOUT_MS:20000}
+    report-voice-dimension: ${VOICE_ANALYSIS_REPORT_VOICE_DIMENSION:true}
   verification-code:
     ttl: ${REGISTER_CODE_TTL:5m}
     cooldown: ${REGISTER_CODE_COOLDOWN:60s}

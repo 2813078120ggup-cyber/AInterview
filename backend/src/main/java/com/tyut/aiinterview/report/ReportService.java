@@ -3,6 +3,7 @@ package com.tyut.aiinterview.report;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tyut.aiinterview.ai.DeepSeekGateway;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.common.PageResult;
@@ -24,6 +25,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
@@ -43,6 +45,7 @@ public class ReportService {
     private final CompanyAccessService companyAccess;
     private final OperationAuditService auditService;
     private final SiteNotificationService notificationService;
+    private final ObjectMapper objectMapper;
     public ReportService(ReportMapper reportMapper, InterviewMapper interviewMapper, InterviewQuestionMapper questionMapper,
                          EvaluationMapper evaluationMapper, UserMapper userMapper, CurrentUser currentUser,
                          DeepSeekGateway deepSeekGateway, CompanyAccessService companyAccess) {
@@ -60,6 +63,7 @@ public class ReportService {
         this.deepSeekGateway = deepSeekGateway; this.companyAccess = companyAccess;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.objectMapper = new ObjectMapper();
     }
     @Transactional
     public Report generate(Long interviewId) {
@@ -102,7 +106,7 @@ public class ReportService {
         if (!(id.equals(interview.getCandidateId()) || id.equals(interview.getInterviewerId()) || manager)) throw BusinessException.forbidden("无权查看报告");
         Report report = reportMapper.selectOne(new LambdaQueryWrapper<Report>().eq(Report::getInterviewId, interviewId));
         if (report == null) throw BusinessException.notFound("报告尚未生成");
-        if (id.equals(interview.getCandidateId()) && report.getStatus() != 1) throw BusinessException.forbidden("报告尚未发布");
+        // 候选人面试完成后即可直接查看报告，无需等待发布
         return report;
     }
     public ReportDtos.ReportDetail detail(Long interviewId) {
@@ -136,7 +140,118 @@ public class ReportService {
                 report.getImprovementSuggestions(), report.getGenerationMethod(), report.getScoringPromptCode(),
                 report.getScoringPromptVersionNo(), report.getReportPromptCode(), report.getReportPromptVersionNo(),
                 report.getGeneratedBy(), report.getPdfUrl(), report.getStatus(), report.getPublishedAt(), questionCount,
-                reliabilityWarning(questionCount));
+                reliabilityWarning(questionCount), questionVoiceReviews(interviewId), questionTextReviews(interviewId));
+    }
+
+    /**
+     * 逐题文本理解与评价：仅返回已评估（textEvidence 非空）的题目，
+     * 并解析 textEvidence 中的命中分档、四维原始分与评分规则版本，实现可追溯。
+     */
+    private List<ReportDtos.QuestionTextReview> questionTextReviews(Long interviewId) {
+        List<InterviewQuestion> questions = questionMapper.selectList(new LambdaQueryWrapper<InterviewQuestion>()
+                .eq(InterviewQuestion::getInterviewId, interviewId)
+                .orderByAsc(InterviewQuestion::getSequenceNo));
+        if (questions.isEmpty()) return List.of();
+        List<Long> questionIds = questions.stream().map(InterviewQuestion::getId).toList();
+        Map<Long, Evaluation> byQuestion = evaluationMapper
+                .selectList(new LambdaQueryWrapper<Evaluation>().in(Evaluation::getInterviewQuestionId, questionIds))
+                .stream().collect(Collectors.toMap(Evaluation::getInterviewQuestionId, Function.identity(), (a, b) -> a));
+        List<ReportDtos.QuestionTextReview> reviews = new ArrayList<>();
+        for (InterviewQuestion question : questions) {
+            Evaluation evaluation = byQuestion.get(question.getId());
+            if (evaluation == null || evaluation.getTextEvidence() == null || evaluation.getTextEvidence().isBlank()) continue;
+            String band = null;
+            String bandDefinition = null;
+            String inputDigest = null;
+            Integer scoringRuleVersion = null;
+            if (evaluation.getTextEvidence() != null) {
+                try {
+                    JsonNode evidence = objectMapper.readTree(evaluation.getTextEvidence());
+                    band = textNode(evidence, "band");
+                    bandDefinition = textNode(evidence, "band_definition");
+                    inputDigest = textNode(evidence, "input_digest");
+                    JsonNode versionNode = evidence.get("scoring_rule_version");
+                    if (versionNode != null && versionNode.isNumber()) scoringRuleVersion = versionNode.asInt();
+                } catch (Exception ignored) {
+                    // 证据解析失败不阻断，字段为 null 即可
+                }
+            }
+            reviews.add(new ReportDtos.QuestionTextReview(question.getSequenceNo(), questionTitle(question),
+                    evaluation.getOverallScore(), evaluation.getProfessionalScore(), evaluation.getExpressionScore(),
+                    evaluation.getLogicScore(), evaluation.getAdaptabilityScore(), evaluation.getComment(),
+                    band, bandDefinition, inputDigest, scoringRuleVersion, evaluation.getTextEvidence()));
+        }
+        return reviews;
+    }
+
+    private String textNode(JsonNode evidence, String field) {
+        JsonNode node = evidence.get(field);
+        if (node == null || node.isNull()) return null;
+        return node.asText();
+    }
+
+    /**
+     * 从题目快照提取题目内容：questionSnapshot 是 JSON（含 content/options/explanation 等），
+     * 报告展示时只取 content 作为题目文本；解析失败则原样返回。
+     */
+    private String questionTitle(InterviewQuestion question) {
+        String snapshot = question.getQuestionSnapshot();
+        if (snapshot == null || snapshot.isBlank()) return "";
+        try {
+            JsonNode node = objectMapper.readTree(snapshot);
+            JsonNode content = node.get("content");
+            if (content != null && !content.isNull()) return content.asText();
+        } catch (Exception ignored) {
+            // 非 JSON 快照，原样返回
+        }
+        return snapshot;
+    }
+
+
+    /**
+     * 逐题语音表现：仅返回已评估（voiceScore 非空）的题目，
+     * 并解析 voiceEvidence 中的四维子分与可追溯证据。
+     */
+    private List<ReportDtos.QuestionVoiceReview> questionVoiceReviews(Long interviewId) {
+        List<InterviewQuestion> questions = questionMapper.selectList(new LambdaQueryWrapper<InterviewQuestion>()
+                .eq(InterviewQuestion::getInterviewId, interviewId)
+                .orderByAsc(InterviewQuestion::getSequenceNo));
+        if (questions.isEmpty()) return List.of();
+        List<Long> questionIds = questions.stream().map(InterviewQuestion::getId).toList();
+        Map<Long, Evaluation> byQuestion = evaluationMapper
+                .selectList(new LambdaQueryWrapper<Evaluation>().in(Evaluation::getInterviewQuestionId, questionIds))
+                .stream().collect(Collectors.toMap(Evaluation::getInterviewQuestionId, Function.identity(), (a, b) -> a));
+        List<ReportDtos.QuestionVoiceReview> reviews = new ArrayList<>();
+        for (InterviewQuestion question : questions) {
+            Evaluation evaluation = byQuestion.get(question.getId());
+            if (evaluation == null || evaluation.getVoiceScore() == null) continue;
+            BigDecimal speakingRate = null;
+            BigDecimal fluency = null;
+            BigDecimal emotionStability = null;
+            BigDecimal clarity = null;
+            if (evaluation.getVoiceEvidence() != null && !evaluation.getVoiceEvidence().isBlank()) {
+                try {
+                    JsonNode evidence = objectMapper.readTree(evaluation.getVoiceEvidence());
+                    speakingRate = decimalNode(evidence, "speaking_rate");
+                    fluency = decimalNode(evidence, "fluency");
+                    emotionStability = decimalNode(evidence, "emotion_stability");
+                    clarity = decimalNode(evidence, "clarity");
+                } catch (Exception ignored) {
+                    // 证据解析失败不阻断，子分为 null 即可
+                }
+            }
+            reviews.add(new ReportDtos.QuestionVoiceReview(question.getSequenceNo(), questionTitle(question),
+                    evaluation.getVoiceScore(), speakingRate, fluency, emotionStability, clarity,
+                    evaluation.getVoiceEvidence()));
+        }
+        return reviews;
+    }
+
+    private BigDecimal decimalNode(JsonNode evidence, String field) {
+        JsonNode node = evidence.get(field);
+        if (node == null || node.isNull()) return null;
+        if (node.isNumber()) return BigDecimal.valueOf(node.asDouble()).setScale(2, RoundingMode.HALF_UP);
+        return null;
     }
     public ReportDtos.TrainingPlan trainingPlan(Long interviewId) {
         Interview interview = interviewMapper.selectById(interviewId);

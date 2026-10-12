@@ -243,7 +243,8 @@ public class CompanyReportReviewService {
         return new ReportDtos.CompanyEvaluationView(evaluation.getProfessionalScore(),
                 evaluation.getExpressionScore(), evaluation.getLogicScore(),
                 evaluation.getAdaptabilityScore(), evaluation.getOverallScore(),
-                evaluation.getComment(), evaluation.getSource(), evaluation.getStatus());
+                evaluation.getComment(), evaluation.getSource(), evaluation.getStatus(),
+                evaluation.getVoiceScore(), evaluation.getVoiceEvidence());
     }
 
     private String questionText(InterviewQuestion question) {

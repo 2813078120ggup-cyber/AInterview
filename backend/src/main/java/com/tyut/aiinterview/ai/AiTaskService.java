@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tyut.aiinterview.common.BusinessException;
 import com.tyut.aiinterview.domain.AiTask;
 import com.tyut.aiinterview.domain.Evaluation;
@@ -57,9 +58,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class AiTaskService {
+    private static final Logger logger = LoggerFactory.getLogger(AiTaskService.class);
+
     public static final String FOLLOW_UP = "FOLLOW_UP";
     public static final String OPENING = "OPENING";
     public static final String AUTO_EVALUATION = "AUTO_EVALUATION";
@@ -101,6 +106,7 @@ public class AiTaskService {
     private CompanyAccessService companyAccessService;
     private OperationAuditService operationAuditService;
     private RecruitmentAiGovernanceService recruitmentAiGovernanceService;
+    private com.tyut.aiinterview.voice.VoiceAnalysisService voiceAnalysisService;
     @Value("${app.ai-task.scheduler-enabled:true}")
     private boolean schedulerEnabled = true;
 
@@ -142,6 +148,11 @@ public class AiTaskService {
     @Autowired(required = false)
     void setRecruitmentAiGovernanceService(RecruitmentAiGovernanceService governanceService) {
         this.recruitmentAiGovernanceService = governanceService;
+    }
+
+    @Autowired(required = false)
+    void setVoiceAnalysisService(com.tyut.aiinterview.voice.VoiceAnalysisService voiceAnalysisService) {
+        this.voiceAnalysisService = voiceAnalysisService;
     }
 
     @Transactional
@@ -615,7 +626,7 @@ public class AiTaskService {
             } else {
                 JsonNode result = semanticEvaluations.get(input.interviewQuestion().getId()).join();
                 evaluation = upsertAiEvaluation(input.interviewQuestion().getId(), result,
-                        input.candidateAnswer(), false);
+                        input.candidateAnswer(), false, scoringPromptVersion);
             }
             evaluations.add(evaluation);
             ModelEvaluationInput modelInput = modelInputs.get(input.interviewQuestion().getId());
@@ -624,6 +635,8 @@ public class AiTaskService {
                     evaluation.getProfessionalScore(), evaluation.getExpressionScore(), evaluation.getLogicScore(),
                     evaluation.getAdaptabilityScore(), evaluation.getOverallScore(), evaluation.getComment()));
         }
+
+        enrichVoiceAnalysis(inputs, evaluations);
 
         ReportEvaluationContext reportContext = new ReportEvaluationContext(
                 "objective_rule 表示客观选择题已由系统按标准答案判分；候选人只需选择选项，不得因答案短或没有解释而扣分。ai_semantic 表示简答题，可评价内容深度、表达、逻辑和应变。",
@@ -650,7 +663,50 @@ public class AiTaskService {
         }
     }
 
-    private Evaluation upsertAiEvaluation(Long interviewQuestionId, JsonNode result, String candidateAnswer, boolean choiceQuestion) {
+    /**
+     * 语音分析旁路增强：对每个非选择题回答并行调用语音分析服务，
+     * 将可追溯的语音维度结果写入对应评测。语音分析是旁路增强，
+     * 服务不可用或某条回答无音频时保持「未评估」（voice_score 为 null），
+     * 绝不阻断或回退文本评分主链路。
+     */
+    private void enrichVoiceAnalysis(List<EvaluationInput> inputs, List<Evaluation> evaluations) {
+        if (voiceAnalysisService == null) return;
+        Map<Long, Evaluation> evaluationByQuestion = new HashMap<>();
+        for (Evaluation evaluation : evaluations) {
+            evaluationByQuestion.put(evaluation.getInterviewQuestionId(), evaluation);
+        }
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (EvaluationInput input : inputs) {
+            if (input.choiceQuestion()) continue;
+            InterviewAnswer answer = input.answer();
+            if (answer == null) continue;
+            futures.add(CompletableFuture.runAsync(() -> {
+                var result = voiceAnalysisService.analyzeAnswer(answer);
+                Evaluation evaluation = evaluationByQuestion.get(input.interviewQuestion().getId());
+                if (evaluation == null) return;
+                if (result.available() && result.voiceScore() != null) {
+                    evaluation.setVoiceScore(BigDecimal.valueOf(result.voiceScore()).setScale(2, RoundingMode.HALF_UP));
+                    evaluation.setVoiceEvaluatedAt(LocalDateTime.now());
+                }
+                try {
+                    evaluation.setVoiceEvidence(objectMapper.writeValueAsString(result.evidence()));
+                } catch (JsonProcessingException ignored) {
+                    evaluation.setVoiceEvidence("{}");
+                }
+                evaluationMapper.updateById(evaluation);
+            }, reportScoringExecutor));
+        }
+        if (futures.isEmpty()) return;
+        try {
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+        } catch (CompletionException exception) {
+            // 语音分析是旁路增强，失败仅记录日志，不影响评分主链路
+            logger.warn("语音分析旁路增强部分失败: {}", exception.getCause() == null ? exception.getMessage() : exception.getCause().getMessage());
+        }
+    }
+
+    private Evaluation upsertAiEvaluation(Long interviewQuestionId, JsonNode result, String candidateAnswer,
+                                          boolean choiceQuestion, int scoringPromptVersion) {
         Evaluation evaluation = automaticEvaluation(interviewQuestionId);
         BigDecimal professional = calibratedScore(score(result, "professionalScore"), candidateAnswer, choiceQuestion);
         BigDecimal expression = calibratedScore(score(result, "expressionScore"), candidateAnswer, choiceQuestion);
@@ -663,10 +719,66 @@ public class AiTaskService {
         evaluation.setOverallScore(calibratedOverall(score(result, "overallScore"), candidateAnswer, choiceQuestion,
                 professional, expression, logic, adaptability));
         evaluation.setComment(requiredText(result, "comment", 2000));
+        evaluation.setTextEvidence(textUnderstandingEvidence(result, candidateAnswer, professional, expression,
+                logic, adaptability, scoringPromptVersion));
         evaluation.setStatus(1);
         evaluation.setConfirmedBy(null);
         if (evaluation.getId() == null) evaluationMapper.insert(evaluation); else evaluationMapper.updateById(evaluation);
         return evaluation;
+    }
+
+    /**
+     * 文本理解与评价感知模块的可追溯证据：结构化记录输入摘要、命中分档、
+     * 四维原始分（未校准）与评分规则版本，便于报告页可追溯输入与评分规则。
+     */
+    private String textUnderstandingEvidence(JsonNode result, String candidateAnswer, BigDecimal professional,
+                                             BigDecimal expression, BigDecimal logic, BigDecimal adaptability,
+                                             int scoringPromptVersion) {
+        ObjectNode evidence = objectMapper.createObjectNode();
+        evidence.put("module", "text_understanding");
+        evidence.put("scoring_rule_version", scoringPromptVersion);
+        evidence.put("input_length", candidateAnswer == null ? 0 : candidateAnswer.length());
+        String digest = candidateAnswer == null || candidateAnswer.isBlank() ? ""
+                : (candidateAnswer.length() > 120 ? candidateAnswer.substring(0, 120) + "…" : candidateAnswer);
+        evidence.put("input_digest", digest);
+        evidence.put("band", scoreBand(score(result, "overallScore")));
+        evidence.put("band_definition", scoreBandDefinition(score(result, "overallScore")));
+        evidence.put("professional_score_raw", score(result, "professionalScore"));
+        evidence.put("expression_score_raw", score(result, "expressionScore"));
+        evidence.put("logic_score_raw", score(result, "logicScore"));
+        evidence.put("adaptability_score_raw", score(result, "adaptabilityScore"));
+        evidence.put("professional_calibrated", professional);
+        evidence.put("expression_calibrated", expression);
+        evidence.put("logic_calibrated", logic);
+        evidence.put("adaptability_calibrated", adaptability);
+        try {
+            return objectMapper.writeValueAsString(evidence);
+        } catch (JsonProcessingException ignored) {
+            return evidence.toString();
+        }
+    }
+
+    private String scoreBand(BigDecimal overall) {
+        if (overall == null) return "unknown";
+        if (overall.compareTo(BigDecimal.valueOf(93)) >= 0) return "expert";
+        if (overall.compareTo(BigDecimal.valueOf(86)) >= 0) return "excellent";
+        if (overall.compareTo(BigDecimal.valueOf(76)) >= 0) return "solid";
+        if (overall.compareTo(BigDecimal.valueOf(61)) >= 0) return "adequate";
+        if (overall.compareTo(BigDecimal.valueOf(41)) >= 0) return "shallow";
+        if (overall.compareTo(BigDecimal.valueOf(21)) >= 0) return "fragmented";
+        return "unanswered";
+    }
+
+    private String scoreBandDefinition(BigDecimal overall) {
+        return switch (scoreBand(overall)) {
+            case "expert" -> "专家级：非常完整、深入且几乎无明显缺陷";
+            case "excellent" -> "优秀：体现深度理解、准确术语、清晰推理和工程经验";
+            case "solid" -> "较完整：覆盖核心机制、适用场景、风险和实践经验";
+            case "adequate" -> "基本正确：有结构，但深度、案例、边界或追问应对一般";
+            case "shallow" -> "知道部分概念：表达浅，缺少关键机制、边界或实践细节";
+            case "fragmented" -> "零散关键词：明显缺少核心概念或大多错误";
+            default -> "未有效回答：未回答、答非所问或几乎没有有效信息";
+        };
     }
 
     private Evaluation upsertChoiceEvaluation(Long interviewQuestionId, ChoiceAnswerScorer.Result result) {

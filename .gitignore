@@ -47,6 +47,9 @@ frontend-react/playwright-*.png
 uploads/
 data/
 
+# Temporary debug screenshots (uuid-named images in repo root)
+[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*.png
+
 # Retired or historical material is kept outside the clean repository
 docs/archive/
 docs/database/archive/

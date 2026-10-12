@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+test_analyzer.py
+test_audio.wav
+*.wav
+.git/
+.gitignore

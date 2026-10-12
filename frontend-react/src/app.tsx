@@ -153,12 +153,6 @@ function UnknownRoute() {
   return <Navigate to={postLoginDestination(user.roles)} replace />
 }
 
-function CandidateWorkspace() {
-  return <CandidatePageShell>
-    <Routes><Route path="/workspace" element={<CandidateWorkspaceOverview />} /><Route path="/candidate/interviews" element={<CandidateLobby />} /><Route path="/candidate/calendar" element={<CandidateCalendar />} /><Route path="/candidate/reflections" element={<CandidateReflections />} /><Route path="/algorithm" element={<AlgorithmHomePage />} /><Route path="/algorithm/visualizer" element={<AlgorithmVisualizerPage />} /><Route path="/algorithm/visualizer/:algorithmSlug" element={<AlgorithmVisualizerDetailPage />} /><Route path="/algorithm/problems" element={<ProblemListPage />} /><Route path="/algorithm/problems/:problemId" element={<ProblemDetailPage />} /><Route path="/algorithm/submissions" element={<SubmissionListPage />} /><Route path="/algorithm/submissions/:submissionId" element={<SubmissionDetailPage />} /><Route path="/algorithm/wrong-problems" element={<WrongProblemPage />} /><Route path="*" element={<CandidateWorkspaceOverview />} /></Routes>
-  </CandidatePageShell>
-}
-
 function AbilityPage() {
   return <CandidatePageShell><AbilityDashboard /></CandidatePageShell>
 }
@@ -256,18 +250,18 @@ export function App() {
         <Route path="/candidate/settings" element={<Protected requiredAudience="candidate"><CandidateSettingsRedirect /></Protected>} />
         <Route path="/users" element={<Protected requiredAudience="candidate"><CandidateSettingsRedirect /></Protected>} />
         <Route path="/interviews" element={<Protected requiredAudience="candidate"><Navigate to="/candidate/interviews" replace /></Protected>} />
-        <Route path="/workspace" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/candidate/interviews" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/candidate/calendar" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/candidate/reflections" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/visualizer" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/visualizer/:algorithmSlug" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/problems" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/problems/:problemId" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/submissions" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/submissions/:submissionId" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
-        <Route path="/algorithm/wrong-problems" element={<Protected requiredAudience="candidate"><CandidateWorkspace /></Protected>} />
+        <Route path="/workspace" element={<Protected requiredAudience="candidate"><CandidatePageShell><CandidateWorkspaceOverview /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/interviews" element={<Protected requiredAudience="candidate"><CandidatePageShell><CandidateLobby /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/calendar" element={<Protected requiredAudience="candidate"><CandidatePageShell><CandidateCalendar /></CandidatePageShell></Protected>} />
+        <Route path="/candidate/reflections" element={<Protected requiredAudience="candidate"><CandidatePageShell><CandidateReflections /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm" element={<Protected requiredAudience="candidate"><CandidatePageShell><AlgorithmHomePage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/visualizer" element={<Protected requiredAudience="candidate"><CandidatePageShell><AlgorithmVisualizerPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/visualizer/:algorithmSlug" element={<Protected requiredAudience="candidate"><CandidatePageShell><AlgorithmVisualizerDetailPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/problems" element={<Protected requiredAudience="candidate"><CandidatePageShell><ProblemListPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/problems/:problemId" element={<Protected requiredAudience="candidate"><CandidatePageShell><ProblemDetailPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/submissions" element={<Protected requiredAudience="candidate"><CandidatePageShell><SubmissionListPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/submissions/:submissionId" element={<Protected requiredAudience="candidate"><CandidatePageShell><SubmissionDetailPage /></CandidatePageShell></Protected>} />
+        <Route path="/algorithm/wrong-problems" element={<Protected requiredAudience="candidate"><CandidatePageShell><WrongProblemPage /></CandidatePageShell></Protected>} />
         <Route path="/" element={<FeaturesPage />} />
         <Route path="*" element={<UnknownRoute />} />
       </Routes>
