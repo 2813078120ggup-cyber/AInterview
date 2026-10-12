@@ -1,0 +1,45 @@
+AI 智面（Ainterview）构建与自动化测试记录
+=============================================
+
+环境：Windows 11 / Docker 24+ / docker compose v2
+日期：2026-10-12
+
+一、构建记录
+1. 后端镜像构建：
+   命令: docker compose build backend
+   结果: Image ainterview-backend Built（多阶段构建，mvn -q compile 通过，退出码 0）
+2. 前端镜像构建：
+   命令: docker compose build frontend
+   结果: Image ainterview-frontend Built（React 19 / Vite 构建通过）
+3. 语音分析服务构建：
+   命令: docker compose build voice-analysis
+   结果: Image ainterview-voice-analysis Built（Python 3.11 + librosa 0.11 + FastAPI）
+4. 数据库迁移：
+   backend 启动日志: "Migrating schema `ai_interview` to version 49 - add text understanding evidence"
+   "Successfully applied 1 migration ... now at version v49"
+5. 服务健康检查：
+   docker compose ps → backend Healthy / mysql Healthy / redis Healthy / voice-analysis healthy / frontend Started
+
+二、自动化测试/编译验证记录
+1. 后端编译: cd backend && mvn -q -o compile → 退出码 0
+2. 前端类型检查: node_modules/.bin/tsc -b --noEmit → 退出码 0
+3. 语音分析冒烟测试: python test_analyzer.py → voice_score 0-100，四维子分齐全，冒烟通过
+
+三、端到端验证记录（感知模块真实结果）
+1. 语音分析（新输入 webm 录音）：
+   - evaluation.voice_score 落库（示例: 29.5 / 39.8）
+   - voice_evidence 含四维子分（语速/流利度/情绪稳定性/清晰度）与权重规则
+   - 未录音题目 voice_score=NULL（"未评估"语义）
+2. 文本理解与评价（新输入文字回答）：
+   - evaluation.text_evidence 落库（示例 781 字节）
+   - 内容含: module=text_understanding, scoring_rule_version=1, input_digest(输入摘要), band=adequate, 四维原始分与校准分
+3. 报告接口（GET /api/v1/interviews/{id}/report）：
+   - 返回 questionVoiceReviews（含四维子分）与 questionTextReviews（含档位/评语/规则版本）
+   - 报告页逐题渲染，未测维度显示"未评估"
+
+四、异常与权限复现记录
+1. 非音频文件上传 → 明确报错提示，可复现
+2. 候选人越权访问他人报告 → HTTP 403 拦截，可复现
+3. DeepSeek 超时 → 评分任务重试，语音旁路失败仅记录日志不阻断主链路（backend WARN 日志）
+
+（本记录由小组共同维护，武心怡整理测试部分，张嘉豪汇总）
