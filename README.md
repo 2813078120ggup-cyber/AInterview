@@ -2,7 +2,7 @@
 
 当前项目目录：`D:\Ainterview`
 
-AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模拟面试平台，覆盖候选人练习、管理端运营、AI 追问与评分、报告复盘、音视频录制回放、算法练习、反馈工单和站内通知。
+AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模拟面试平台，覆盖候选人练习、管理端运营、AI 追问与评分、语音/文本多模态感知分析、可追溯评测报告、音视频录制回放、算法练习、反馈工单和站内通知。
 
 ## 当前功能
 
@@ -10,6 +10,9 @@ AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模
 - 题库、题目分类、岗位、候选人和面试场次管理。
 - 文字、语音、视频模拟面试，支持进度恢复、答案可靠保存和智能追问。
 - 简历驱动的自由面试、AI 评分、报告生成、能力趋势与面试心得。
+- **语音分析感知模块**：独立 Python 服务（librosa）对录音作答分析语速、流利度、情绪稳定性、清晰度四维子分，按录音段聚合接入评分引擎，结果可追溯；webm 经 ffmpeg 转码兜底，语音旁路失败不阻断主链路。
+- **文本理解与评价感知模块**：DeepSeek 语义评分按分档规则输出专业/表达/逻辑/应变四维分与评语，`text_evidence` 记录输入摘要、命中分档、原始/校准分与评分规则版本，报告逐题可追溯。
+- **可追溯评测报告**：两个感知结果进入四维加权评分规则，报告页逐题展示语音表现与回答评价，未测维度显示"未评估"。
 - 按题保存音视频分段和事件时间轴，管理端鉴权回放。
 - OpenTalking WebRTC 数字人、TTS/STT；不可用时可降级到浏览器语音能力。
 - Java 17 算法练习与 Docker 隔离判题。
@@ -22,13 +25,14 @@ AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模
 
 | 层级 | 当前实现 |
 |---|---|
-| 后端 | Java 17、Spring Boot 3.3、Spring Security、MyBatis-Plus、Flyway、MySQL 8、Redis |
+| 后端 | Java 17、Spring Boot 4.0、Spring Security、MyBatis-Plus、Flyway、MySQL 8、Redis |
 | AI 与数字人 | DeepSeek Provider、版本化提示词、异步 AI 任务、OpenTalking、WebRTC |
+| 语音分析 | 独立 FastAPI 服务（Python 3.11、librosa、ffmpeg），语速/流利度/情绪稳定性/清晰度四维分析 |
 | 前端 | React 19、TypeScript、Vite、Tailwind CSS 4、Radix UI、Framer Motion、Monaco Editor |
 | 文件与报告 | PDFBox、Apache POI、PDF.js、浏览器 MediaRecorder |
 | 交付 | Docker Compose、Nginx、GitHub Actions、Prometheus |
 
-当前数据库结构由 Flyway V1、V9–V26 管理，最新 V26 为学习资料、PDF 版本、访问权限和批注模块；V25 为反馈工单与持久化站内通知。
+当前数据库结构由 Flyway V1、V9–V49 管理。V48 为语音分析维度（`voice_score`/`voice_evidence`），V49 为文本理解与评价可追溯证据（`text_evidence`）。
 
 ## 目录结构
 
@@ -36,6 +40,7 @@ AInterview 是一套基于 Spring Boot、React、DeepSeek 和 OpenTalking 的模
 D:\Ainterview\
 ├─ backend/             Spring Boot 后端、Flyway 迁移和测试
 ├─ frontend-react/      当前 React 前端
+├─ voice-analysis-service/  语音分析感知模块（FastAPI + librosa 四维分析）
 ├─ runner-images/       Java 17 判题沙箱镜像
 ├─ deployment/          Nginx、OpenTalking、备份和生产运维工具
 ├─ docs/                设计、部署、知识库、迭代与更新日志
@@ -52,6 +57,7 @@ D:\Ainterview\
 - JDK 17
 - Maven 3.9+
 - Node.js 22.13+ 与 npm（`pdfjs-dist` 6.x 构建要求）
+- Python 3.11 与 ffmpeg（语音分析服务 `voice-analysis-service` 需要）
 - Docker Engine 26+、Docker Compose v2+
 - 独立部署的 OpenTalking 服务（使用数字人功能时需要）
 
@@ -63,6 +69,8 @@ Copy-Item .env.example .env
 ```
 
 编辑 `.env`，至少替换 MySQL、Redis、JWT 和 DeepSeek 的占位值。真实 `.env` 不得提交仓库。
+
+启用语音分析感知模块时，将 `.env` 中 `VOICE_ANALYSIS_ENABLED` 设为 `true`（默认关闭；该服务随 `docker compose` 一并构建，作为旁路增强，失败不阻断文本评分主链路）。
 
 ```powershell
 docker compose --profile judge build java-runner
